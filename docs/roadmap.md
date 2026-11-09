@@ -13,6 +13,12 @@
 - [ ] Trocar runner de migrations por golang-migrate ou goose
 
 ## Histórico
+### 2026-11-08 — fix countdown da reserva
+- Bug: a tela dizia "O tempo da sua reserva acabou" logo após reservar. O `useCountdown` guardava o valor em
+  estado (0 antes da reserva) e, no 1º render com a reserva, o efeito de expiração via 0 e descartava o booking.
+- Correção: countdown calculado no render a partir de um prazo local; backend passou a enviar
+  `seconds_remaining` (relógio do banco), eliminando dependência de sincronia de relógio WSL2 × Windows.
+
 ### 2026-11-08 — v0.1 (estrutura inicial)
 - Monorepo com docker compose: Postgres 16, backend Go, frontend React/Vite.
 - Schema venues/events/tickets/bookings, migrations embutidas, seed com 6 eventos (alguns assentos já vendidos).

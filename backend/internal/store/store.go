@@ -276,10 +276,14 @@ func (s *Store) GetBooking(ctx context.Context, bookingID string) (*Booking, err
 	err := s.pool.QueryRow(ctx, `
 SELECT b.id::text, b.event_id, e.slug, b.customer_name, b.customer_email,
        CASE WHEN b.status = 'PENDING' AND b.expires_at < now() THEN 'EXPIRED' ELSE b.status END,
-       b.total_cents, b.expires_at, b.created_at, b.confirmed_at
+       b.total_cents, b.expires_at,
+       CASE WHEN b.status = 'PENDING'
+            THEN GREATEST(0, floor(EXTRACT(EPOCH FROM b.expires_at - clock_timestamp())))::int
+            ELSE 0 END,
+       b.created_at, b.confirmed_at
 FROM bookings b JOIN events e ON e.id = b.event_id
 WHERE b.id = $1`, bookingID).Scan(&b.ID, &b.EventID, &b.EventSlug, &b.CustomerName, &b.CustomerEmail,
-		&b.Status, &b.TotalCents, &b.ExpiresAt, &b.CreatedAt, &b.ConfirmedAt)
+		&b.Status, &b.TotalCents, &b.ExpiresAt, &b.SecondsRemaining, &b.CreatedAt, &b.ConfirmedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}

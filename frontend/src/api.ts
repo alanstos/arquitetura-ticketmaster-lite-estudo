@@ -44,6 +44,7 @@ export type Booking = {
   ticket_ids: number[]
   total_cents: number
   expires_at: string
+  seconds_remaining: number // tempo restante do hold, medido pelo relógio do servidor
   created_at: string
   confirmed_at?: string
 }

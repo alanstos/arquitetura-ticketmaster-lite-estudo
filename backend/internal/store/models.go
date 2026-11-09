@@ -60,18 +60,22 @@ const (
 )
 
 type Booking struct {
-	ID            string     `json:"id"`
-	EventID       int64      `json:"event_id"`
-	EventSlug     string     `json:"event_slug"`
-	CustomerName  string     `json:"customer_name"`
-	CustomerEmail string     `json:"customer_email"`
-	Status        string     `json:"status"`
-	Seats         []string   `json:"seats"`
-	TicketIDs     []int64    `json:"ticket_ids"`
-	TotalCents    int        `json:"total_cents"`
-	ExpiresAt     time.Time  `json:"expires_at"`
-	CreatedAt     time.Time  `json:"created_at"`
-	ConfirmedAt   *time.Time `json:"confirmed_at,omitempty"`
+	ID            string    `json:"id"`
+	EventID       int64     `json:"event_id"`
+	EventSlug     string    `json:"event_slug"`
+	CustomerName  string    `json:"customer_name"`
+	CustomerEmail string    `json:"customer_email"`
+	Status        string    `json:"status"`
+	Seats         []string  `json:"seats"`
+	TicketIDs     []int64   `json:"ticket_ids"`
+	TotalCents    int       `json:"total_cents"`
+	ExpiresAt     time.Time `json:"expires_at"`
+	// SecondsRemaining é calculado com o relógio do banco. O frontend usa este
+	// valor (e não expires_at) para o countdown, evitando depender de o relógio
+	// do navegador estar sincronizado com o do servidor (comum no WSL2).
+	SecondsRemaining int        `json:"seconds_remaining"`
+	CreatedAt        time.Time  `json:"created_at"`
+	ConfirmedAt      *time.Time `json:"confirmed_at,omitempty"`
 }
 
 type ReserveInput struct {

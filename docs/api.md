@@ -47,7 +47,9 @@ Todos opcionais. 400 se data inválida ou `endDate < startDate`. Exemplo:
 ```json
 {"event_id": 1, "ticket_ids": [7, 8], "customer_name": "Ana", "customer_email": "ana@example.com"}
 ```
-- **201** → booking (`status: "PENDING"`, `expires_at`, `seats`, `ticket_ids`, `total_cents`)
+- **201** → booking (`status: "PENDING"`, `expires_at`, `seconds_remaining`, `seats`, `ticket_ids`, `total_cents`)
+  - `seconds_remaining` é calculado pelo relógio do banco; o frontend usa este campo no countdown
+    (e não `expires_at`) para não depender do relógio do navegador estar sincronizado com o servidor.
 - **400** → validação (1 a 9 assentos, ids duplicados, ticket de outro evento, e-mail inválido)
 - **409** → assento ocupado: `{"error": "...", "unavailable_ticket_ids": [8]}`
 
