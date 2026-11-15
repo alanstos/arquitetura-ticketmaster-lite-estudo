@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/redis/go-redis/extra/redisotel/v9"
 	"github.com/redis/go-redis/v9"
 
 	"ticketmaster-lite/backend/internal/store"
@@ -71,7 +72,16 @@ func New(url string) (*Gate, error) {
 	opt.ReadTimeout = 200 * time.Millisecond
 	opt.WriteTimeout = 200 * time.Millisecond
 	opt.MaxRetries = 1
-	return &Gate{rdb: redis.NewClient(opt)}, nil
+	rdb := redis.NewClient(opt)
+	// Observabilidade: span por comando (EVALSHA do script Lua aparece no trace da
+	// reserva) e métricas do pool de conexões/latência. No-op se o OTel estiver desligado.
+	if err := redisotel.InstrumentTracing(rdb); err != nil {
+		return nil, err
+	}
+	if err := redisotel.InstrumentMetrics(rdb); err != nil {
+		return nil, err
+	}
+	return &Gate{rdb: rdb}, nil
 }
 
 // Ping verifica a conexão. Falhar aqui não impede o uso do Gate: o cliente

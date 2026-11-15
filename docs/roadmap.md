@@ -16,8 +16,20 @@
 - [ ] Idempotency-Key no `POST /reserve`
 - [ ] Build de produção do frontend (nginx) e compose de "prod"
 - [ ] Trocar runner de migrations por golang-migrate ou goose
+- [ ] Observabilidade: alertas no Grafana (ex.: p99 de `/api/reserve`, taxa de 5xx, fallback do seat gate)
+- [ ] Observabilidade: OTel no frontend (trace do clique até o banco via `traceparent`)
+- [ ] Observabilidade: SLO de disponibilidade/latência da reserva; testar envio ao Datadog via OTLP
 
 ## Histórico
+### 2026-11-15 — Observabilidade (OpenTelemetry + Grafana LGTM)
+- Novo `internal/telemetry`: traces, métricas e logs via OTLP/HTTP; `slog` em JSON com `trace_id`/`span_id`.
+- Instrumentação: `otelhttp` (span/métrica por rota), `otelpgx` (span por query + métricas do pool),
+  `redisotel` (seat gate); spans `store.Reserve`/`store.ConfirmBooking` e contadores
+  `ticketmaster.reservations{result}`, `ticketmaster.seat_gate.fallback{reason}`, `ticketmaster.bookings{result}`.
+- Health: `/api/health/live` (healthcheck do compose) e `/api/health/ready` (Postgres/Redis, `ok`/`degraded`/`down`).
+- Serviço `grafana/otel-lgtm` no compose (Grafana em http://localhost:3000) + dashboard provisionado
+  "Ticketmaster Lite". Graceful shutdown passou a esperar o dreno antes do flush. Decisão no ADR-011.
+
 ### 2026-11-15 — Redis como seat gate + `SKIP LOCKED`
 - `Reserve` com UPDATE condicional e `FOR UPDATE SKIP LOCKED`: perdedores recebem 409 na hora, sem fila de lock.
 - Novo `internal/holds` (go-redis v9): holds por assento com `SET NX PX` em script Lua (tudo ou nada),

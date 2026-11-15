@@ -1,4 +1,4 @@
-.PHONY: up down logs reset loadtest go-check fe-check psql
+.PHONY: up down logs reset loadtest go-check fe-check psql obs
 
 up:
 	docker compose up -d --build
@@ -16,6 +16,12 @@ reset:
 
 loadtest:
 	docker compose exec backend /app/loadtest -n 50
+
+# Observabilidade (ADR-011): Grafana com dashboard, traces (Tempo) e logs (Loki).
+obs:
+	@echo "Grafana:    http://localhost:3000/d/ticketmaster-lite"
+	@echo "Explore:    http://localhost:3000/explore  (Tempo = traces, Loki = logs, Prometheus = métricas)"
+	@echo "Readiness:  http://localhost:8080/api/health/ready"
 
 psql:
 	docker compose exec postgres psql -U ticket -d ticketmaster

@@ -10,6 +10,9 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const MaxSeatsPerBooking = 9
@@ -19,6 +22,7 @@ type Store struct {
 	reservationTTL time.Duration
 	gate           SeatGate // opcional (nil = só Postgres)
 	log            *slog.Logger
+	m              instruments // métricas de negócio (telemetry.go)
 }
 
 // SeatGate é um filtro rápido, fora do banco, para disputas por assento
@@ -50,7 +54,7 @@ func WithSeatGate(g SeatGate) Option { return func(s *Store) { s.gate = g } }
 func WithLogger(l *slog.Logger) Option { return func(s *Store) { s.log = l } }
 
 func New(pool *pgxpool.Pool, reservationTTL time.Duration, opts ...Option) *Store {
-	s := &Store{pool: pool, reservationTTL: reservationTTL, log: slog.Default()}
+	s := &Store{pool: pool, reservationTTL: reservationTTL, log: slog.Default(), m: newInstruments()}
 	for _, o := range opts {
 		o(s)
 	}
@@ -146,14 +150,31 @@ ORDER BY t.seat_row, t.seat_number`, ev.ID)
 //     em andamento são puladas em vez de esperadas (fail fast: sem fila de lock),
 //     e o predicado freeSeatSQL é reavaliado sobre a versão mais recente da linha.
 //  2. Se o UPDATE pegou menos assentos que o pedido => rollback (tudo ou nada) e 409.
+//
+// Observabilidade: span "store.Reserve" (pai dos spans do Redis e das queries) e
+// métrica ticketmaster.reservations{result}. Ver telemetry.go.
 func (s *Store) Reserve(ctx context.Context, in ReserveInput) (*Booking, error) {
+	ctx, span := tracer.Start(ctx, "store.Reserve", trace.WithAttributes(
+		attribute.Int64("event.id", in.EventID),
+		attribute.Int("seats.count", len(in.TicketIDs)),
+		attribute.Bool("seat_gate.enabled", s.gate != nil),
+	))
+	b, byGate, err := s.reserve(ctx, in)
+	result := reserveResult(err, byGate)
+	s.m.reservations.Add(ctx, 1, metric.WithAttributes(attribute.String("result", result)))
+	endSpan(span, result, err)
+	return b, err
+}
+
+// reserve devolve byGate=true quando a recusa veio do seat gate (Redis).
+func (s *Store) reserve(ctx context.Context, in ReserveInput) (_ *Booking, byGate bool, _ error) {
 	if len(in.TicketIDs) == 0 || len(in.TicketIDs) > MaxSeatsPerBooking {
-		return nil, &ValidationError{Msg: "selecione entre 1 e 9 assentos"}
+		return nil, false, &ValidationError{Msg: "selecione entre 1 e 9 assentos"}
 	}
 	seen := map[int64]bool{}
 	for _, id := range in.TicketIDs {
 		if seen[id] {
-			return nil, &ValidationError{Msg: "ticket_ids duplicados"}
+			return nil, false, &ValidationError{Msg: "ticket_ids duplicados"}
 		}
 		seen[id] = true
 	}
@@ -163,11 +184,13 @@ func (s *Store) Reserve(ctx context.Context, in ReserveInput) (*Booking, error) 
 		switch {
 		case errors.Is(err, ErrGateUnavailable):
 			// Breaker aberto: nem tenta o Redis; vai direto ao Postgres.
+			s.countFallback(ctx, "breaker_open")
 		case err != nil:
 			// Gate falhou: degrada para só-Postgres (a correção não depende dele).
-			s.log.Warn("seat gate indisponível; seguindo só com o Postgres", "erro", err)
+			s.countFallback(ctx, "error")
+			s.log.WarnContext(ctx, "seat gate indisponível; seguindo só com o Postgres", "erro", err)
 		case len(hold.Conflicts) > 0:
-			return nil, &SeatUnavailableError{TicketIDs: hold.Conflicts}
+			return nil, true, &SeatUnavailableError{TicketIDs: hold.Conflicts}
 		default:
 			b, err := s.reserveTx(ctx, in)
 			if err != nil {
@@ -177,13 +200,14 @@ func (s *Store) Reserve(ctx context.Context, in ReserveInput) (*Booking, error) 
 				relCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
 				defer cancel()
 				if rErr := hold.Release(relCtx); rErr != nil {
-					s.log.Warn("falha ao liberar hold no seat gate", "erro", rErr)
+					s.log.WarnContext(ctx, "falha ao liberar hold no seat gate", "erro", rErr)
 				}
 			}
-			return b, err
+			return b, false, err
 		}
 	}
-	return s.reserveTx(ctx, in)
+	b, err := s.reserveTx(ctx, in)
+	return b, false, err
 }
 
 // reserveTx é a parte autoritativa da reserva, toda no Postgres.
@@ -258,6 +282,15 @@ RETURNING t.id`, bookingID, in.EventID, in.TicketIDs)
 // ConfirmBooking simula o pagamento: PENDING (dentro do prazo) -> CONFIRMED e tickets -> SOLD.
 // Idempotente: confirmar um booking já confirmado devolve o próprio booking.
 func (s *Store) ConfirmBooking(ctx context.Context, bookingID string) (*Booking, error) {
+	ctx, span := tracer.Start(ctx, "store.ConfirmBooking", trace.WithAttributes(attribute.String("booking.id", bookingID)))
+	b, err := s.confirmBooking(ctx, bookingID)
+	result := bookingResult(err)
+	s.m.bookings.Add(ctx, 1, metric.WithAttributes(attribute.String("result", result)))
+	endSpan(span, result, err)
+	return b, err
+}
+
+func (s *Store) confirmBooking(ctx context.Context, bookingID string) (*Booking, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return nil, err

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/exaring/otelpgx"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -21,12 +22,25 @@ var migrationsFS embed.FS
 var seedSQL string
 
 // Connect abre o pool, tentando novamente enquanto o Postgres sobe.
+//
+// Observabilidade: o otelpgx implementa o QueryTracer do pgx, gerando um span por
+// query (com o SQL) — sem OTel ligado, usa o provider no-op global. RecordStats
+// publica métricas do pool (conexões em uso/ociosas, tempo esperando conexão).
 func Connect(ctx context.Context, url string, log *slog.Logger) (*pgxpool.Pool, error) {
+	cfg, err := pgxpool.ParseConfig(url)
+	if err != nil {
+		return nil, fmt.Errorf("DATABASE_URL inválida: %w", err)
+	}
+	cfg.ConnConfig.Tracer = otelpgx.NewTracer(otelpgx.WithTrimSQLInSpanName())
+
 	var lastErr error
 	for attempt := 1; attempt <= 30; attempt++ {
-		pool, err := pgxpool.New(ctx, url)
+		pool, err := pgxpool.NewWithConfig(ctx, cfg)
 		if err == nil {
 			if err = pool.Ping(ctx); err == nil {
+				if err := otelpgx.RecordStats(pool); err != nil {
+					log.Warn("métricas do pool indisponíveis", "erro", err)
+				}
 				return pool, nil
 			}
 			pool.Close()

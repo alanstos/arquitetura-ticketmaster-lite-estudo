@@ -14,10 +14,34 @@ import (
 	"ticketmaster-lite/backend/internal/db"
 	"ticketmaster-lite/backend/internal/holds"
 	"ticketmaster-lite/backend/internal/store"
+	"ticketmaster-lite/backend/internal/telemetry"
 )
 
+// version aparece como service.version na telemetria (sobrescrevível com -ldflags).
+var version = "dev"
+
 func main() {
-	log := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	// Telemetria primeiro: o logger e a instrumentação do pgx/Redis dependem dos
+	// providers globais. OTEL_EXPORTER_OTLP_ENDPOINT vazio => desligada (ADR-011).
+	serviceName := env("OTEL_SERVICE_NAME", "ticketmaster-api")
+	tel, err := telemetry.Setup(context.Background(), serviceName, version)
+	if err != nil {
+		slog.Error("telemetria", "erro", err)
+		os.Exit(1)
+	}
+	defer func() {
+		// Flush final: sem isso, os últimos spans/métricas/logs se perdem no shutdown.
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = tel.Shutdown(ctx)
+	}()
+	log := tel.NewLogger(serviceName)
+	slog.SetDefault(log)
+	if tel.Enabled {
+		log.Info("telemetria ligada (OTLP)", "endpoint", os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"))
+	} else {
+		log.Info("telemetria desligada (OTEL_EXPORTER_OTLP_ENDPOINT vazio): só logs no stdout")
+	}
 
 	databaseURL := env("DATABASE_URL", "postgres://ticket:ticket@localhost:5432/ticketmaster?sslmode=disable")
 	port := env("PORT", "8080")
@@ -74,7 +98,12 @@ func main() {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
+	// Graceful shutdown: ao receber SIGTERM, para de aceitar conexões e espera as
+	// requisições em andamento. main só retorna (e faz o flush da telemetria nos
+	// defers) depois disso.
+	drained := make(chan struct{})
 	go func() {
+		defer close(drained)
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -86,6 +115,8 @@ func main() {
 		log.Error("http", "erro", err)
 		os.Exit(1)
 	}
+	<-drained
+	log.Info("api encerrada")
 }
 
 func env(key, def string) string {

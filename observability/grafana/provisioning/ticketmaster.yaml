@@ -1,0 +1,8 @@
+# Provisiona os dashboards do projeto no Grafana do container grafana/otel-lgtm.
+apiVersion: 1
+providers:
+  - name: "Ticketmaster Lite"
+    type: file
+    allowUiUpdates: true
+    options:
+      path: /otel-lgtm/ticketmaster-dashboards

@@ -5,7 +5,8 @@ Erros: `{"error": "mensagem"}`.
 
 | Método | Rota | Descrição |
 |---|---|---|
-| GET | `/api/health` | healthcheck |
+| GET | `/api/health/live` | liveness: processo respondendo (não olha dependências) |
+| GET | `/api/health/ready` | readiness: pinga Postgres e Redis (ver abaixo). `/api/health` é alias |
 | GET | `/api/events` | eventos futuros, ordenados por data |
 | GET | `/api/events/{idOrSlug}` | detalhe + assentos (aceita slug ou id numérico) |
 | GET | `/api/search?keyword=&startDate=&endDate=` | busca |
@@ -109,3 +110,15 @@ curl -X POST localhost:8080/api/reserve -d '{"event_id":1,"ticket_ids":[1],"cust
 curl -X POST localhost:8080/api/booking -d '{"booking_id":"<id>"}'
 curl "localhost:8080/api/admin/tickets?venueId=1&startDate=2026-12-01"
 ```
+
+## Health check — `GET /api/health/ready`
+```json
+{"status":"degraded","checks":{
+  "postgres":{"status":"ok","latency_ms":1},
+  "redis":{"status":"down","latency_ms":502,"error":"dial tcp: lookup redis: i/o timeout"}}}
+```
+| `status` | HTTP | Quando |
+|---|---|---|
+| `ok` | 200 | Postgres e Redis respondendo (ou Redis `disabled`, com `REDIS_URL` vazio) |
+| `degraded` | 200 | Redis fora: reservas seguem só com o Postgres (ADR-010) |
+| `down` | 503 | Postgres fora (ou ping > 1 s): não dá para atender |
