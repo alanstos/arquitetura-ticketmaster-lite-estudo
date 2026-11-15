@@ -53,7 +53,9 @@ Todos opcionais. 400 se data inválida ou `endDate < startDate`. Exemplo:
   - `seconds_remaining` é calculado pelo relógio do banco; o frontend usa este campo no countdown
     (e não `expires_at`) para não depender do relógio do navegador estar sincronizado com o servidor.
 - **400** → validação (1 a 9 assentos, ids duplicados, ticket de outro evento, e-mail inválido)
-- **409** → assento ocupado: `{"error": "...", "unavailable_ticket_ids": [8]}`
+- **409** → assento ocupado: `{"error": "...", "unavailable_ticket_ids": [8]}`. Pode vir do seat gate em Redis
+  (sem tocar no banco) ou do Postgres — inclusive quando o assento está travado por uma reserva concorrente
+  ainda em andamento (`SKIP LOCKED`, ADR-010).
 
 ## POST /api/booking
 ```json

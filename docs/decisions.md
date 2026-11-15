@@ -48,3 +48,25 @@ Formato: contexto → decisão → consequências. Adicione novas no final, nume
 - **Consequências**: relatório consistente com o mapa de assentos e sem custo de lock. **Expõe dados pessoais
   sem autenticação** — aceitável apenas em ambiente de estudo; proteger `/api/admin/*` antes de qualquer
   uso real (item no roadmap). Sem paginação: se o volume crescer, paginar e mover o filtro de status para o servidor.
+
+## ADR-010 — Redis como filtro de holds na frente do Postgres; `SKIP LOCKED` na reserva
+- **Contexto**: em pico (muita gente no mesmo assento), o custo não era volume de escrita (cada reserva são
+  2 escritas e a expiração já é preguiçosa, ADR-005), e sim a **fila de lock**: com `FOR UPDATE` os
+  perdedores esperavam o vencedor commitar, segurando conexões, só para receber 409.
+- **Decisão**:
+  1. `Reserve` passa a usar `UPDATE ... WHERE id IN (SELECT ... FOR UPDATE SKIP LOCKED) RETURNING`: perdedores
+     recebem 409 imediatamente; menos linhas retornadas que o pedido → rollback (tudo ou nada).
+  2. Seat gate opcional em Redis (`internal/holds`, `REDIS_URL`): `SET NX PX` por assento via Lua (tudo ou
+     nada) antes da transação. Recusa sem tocar no banco; quem passa ainda é validado pelo Postgres.
+     O store depende só da interface `store.SeatGate`.
+- **Alternativa descartada**: Redis como fonte da verdade do hold (Postgres só na confirmação). Exigiria
+  dual-write sem transação comum, e perda de chave em failover (replicação assíncrona) permitiria dois holds
+  no mesmo assento; a confirmação teria que consultar os dois sistemas.
+- **Consequências**:
+  - Correção não depende do Redis: com ele fora, o gate abre um circuit breaker (2 s) e tudo segue pelo
+    Postgres; prazo duro de 300 ms por chamada (medido: sem ele, 50 reservas levavam até 25 s com o Redis parado).
+  - Pior caso de inconsistência: chave órfã no Redis (crash entre o `SET` e o rollback) recusa o assento até
+    o TTL, embora o mapa mostre livre. Nunca venda duplicada.
+  - `SKIP LOCKED` pode recusar um assento cuja transação concorrente acabou em rollback (409 "falso").
+  - Chaves não são apagadas na confirmação/expiração: vencem pelo TTL junto com o hold do banco.
+  - Mais um serviço no compose (Redis sem persistência: `--save "" --appendonly no`).

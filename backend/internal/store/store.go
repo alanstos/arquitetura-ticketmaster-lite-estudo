@@ -4,6 +4,7 @@ package store
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strconv"
 	"time"
 
@@ -16,10 +17,44 @@ const MaxSeatsPerBooking = 9
 type Store struct {
 	pool           *pgxpool.Pool
 	reservationTTL time.Duration
+	gate           SeatGate // opcional (nil = só Postgres)
+	log            *slog.Logger
 }
 
-func New(pool *pgxpool.Pool, reservationTTL time.Duration) *Store {
-	return &Store{pool: pool, reservationTTL: reservationTTL}
+// SeatGate é um filtro rápido, fora do banco, para disputas por assento
+// (implementação em internal/holds, com Redis). Ele só serve para recusar cedo
+// quem com certeza vai perder; quem passa ainda é validado pelo Postgres.
+type SeatGate interface {
+	// Acquire tenta segurar todos os assentos (tudo ou nada) por ttl.
+	// Conflicts != vazio => algum assento já estava seguro por outro cliente.
+	Acquire(ctx context.Context, eventID int64, ticketIDs []int64, ttl time.Duration) (*GateHold, error)
+}
+
+// ErrGateUnavailable: o gate está em pausa (circuit breaker aberto após falha)
+// e a reserva deve seguir só com o Postgres.
+var ErrGateUnavailable = errors.New("seat gate em pausa (circuit breaker aberto)")
+
+// GateHold é o resultado de SeatGate.Acquire.
+type GateHold struct {
+	Conflicts []int64                         // assentos já segurados por outro cliente
+	Release   func(ctx context.Context) error // desfaz o hold (só as chaves deste cliente)
+}
+
+// Option configura o Store.
+type Option func(*Store)
+
+// WithSeatGate liga o filtro de assentos (ex.: Redis) na frente do Postgres.
+func WithSeatGate(g SeatGate) Option { return func(s *Store) { s.gate = g } }
+
+// WithLogger define o logger usado para avisos (ex.: gate indisponível).
+func WithLogger(l *slog.Logger) Option { return func(s *Store) { s.log = l } }
+
+func New(pool *pgxpool.Pool, reservationTTL time.Duration, opts ...Option) *Store {
+	s := &Store{pool: pool, reservationTTL: reservationTTL, log: slog.Default()}
+	for _, o := range opts {
+		o(s)
+	}
+	return s
 }
 
 // Expressão SQL do "assento livre": AVAILABLE ou RESERVED com hold vencido.
@@ -101,12 +136,16 @@ ORDER BY t.seat_row, t.seat_number`, ev.ID)
 
 // Reserve segura (hold) os assentos por reservationTTL e cria um Booking PENDING.
 //
-// Controle de concorrência (pessimista):
-//  1. SELECT ... FOR UPDATE trava as linhas dos tickets pedidos, sempre em ordem
-//     de id (evita deadlock entre duas reservas com assentos em comum).
-//  2. Quem chegar depois fica bloqueado até o primeiro commit/rollback e então
-//     relê o status já atualizado => vê RESERVED e recebe 409.
-//  3. Só depois de validar que TODOS estão livres o booking é criado (tudo ou nada).
+// Controle de concorrência em duas camadas (ver ADR-010):
+//
+//  0. (opcional) SeatGate — filtro rápido em Redis (SET NX PX). Se outro cliente
+//     já segura algum assento, devolve 409 sem abrir transação no Postgres.
+//     O gate NÃO é a garantia: se ele estiver fora do ar, seguimos só com o banco.
+//  1. Postgres (fonte da verdade): UPDATE condicional em um único comando, cujo
+//     subselect usa FOR UPDATE SKIP LOCKED. Linhas travadas por outra transação
+//     em andamento são puladas em vez de esperadas (fail fast: sem fila de lock),
+//     e o predicado freeSeatSQL é reavaliado sobre a versão mais recente da linha.
+//  2. Se o UPDATE pegou menos assentos que o pedido => rollback (tudo ou nada) e 409.
 func (s *Store) Reserve(ctx context.Context, in ReserveInput) (*Booking, error) {
 	if len(in.TicketIDs) == 0 || len(in.TicketIDs) > MaxSeatsPerBooking {
 		return nil, &ValidationError{Msg: "selecione entre 1 e 9 assentos"}
@@ -119,44 +158,51 @@ func (s *Store) Reserve(ctx context.Context, in ReserveInput) (*Booking, error) 
 		seen[id] = true
 	}
 
+	if s.gate != nil {
+		hold, err := s.gate.Acquire(ctx, in.EventID, in.TicketIDs, s.reservationTTL)
+		switch {
+		case errors.Is(err, ErrGateUnavailable):
+			// Breaker aberto: nem tenta o Redis; vai direto ao Postgres.
+		case err != nil:
+			// Gate falhou: degrada para só-Postgres (a correção não depende dele).
+			s.log.Warn("seat gate indisponível; seguindo só com o Postgres", "erro", err)
+		case len(hold.Conflicts) > 0:
+			return nil, &SeatUnavailableError{TicketIDs: hold.Conflicts}
+		default:
+			b, err := s.reserveTx(ctx, in)
+			if err != nil {
+				// Postgres recusou (ou falhou): libera as chaves para não bloquear
+				// o assento à toa até o TTL. Contexto próprio: o da requisição pode
+				// já ter sido cancelado.
+				relCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
+				defer cancel()
+				if rErr := hold.Release(relCtx); rErr != nil {
+					s.log.Warn("falha ao liberar hold no seat gate", "erro", rErr)
+				}
+			}
+			return b, err
+		}
+	}
+	return s.reserveTx(ctx, in)
+}
+
+// reserveTx é a parte autoritativa da reserva, toda no Postgres.
+func (s *Store) reserveTx(ctx context.Context, in ReserveInput) (*Booking, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback(ctx)
 
-	rows, err := tx.Query(ctx, `
-SELECT t.id, `+freeSeatSQL+` AS free
-FROM tickets t
-WHERE t.event_id = $1 AND t.id = ANY($2)
-ORDER BY t.id
-FOR UPDATE`, in.EventID, in.TicketIDs)
-	if err != nil {
-		return nil, err
-	}
+	// Os tickets pertencem ao evento? (event_id nunca muda: não precisa de lock.)
 	var found int
-	var unavailable []int64
-	for rows.Next() {
-		var id int64
-		var free bool
-		if err := rows.Scan(&id, &free); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		found++
-		if !free {
-			unavailable = append(unavailable, id)
-		}
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
+	if err := tx.QueryRow(ctx, `
+SELECT count(*) FROM tickets WHERE event_id = $1 AND id = ANY($2)`,
+		in.EventID, in.TicketIDs).Scan(&found); err != nil {
 		return nil, err
 	}
 	if found != len(in.TicketIDs) {
 		return nil, &ValidationError{Msg: "um ou mais ticket_ids não pertencem a este evento"}
-	}
-	if len(unavailable) > 0 {
-		return nil, &SeatUnavailableError{TicketIDs: unavailable}
 	}
 
 	var bookingID string
@@ -169,12 +215,38 @@ RETURNING id::text`, in.EventID, in.CustomerName, in.CustomerEmail, len(in.Ticke
 		return nil, err
 	}
 
-	if _, err := tx.Exec(ctx, `
+	// UPDATE condicional: só toca assentos livres e não travados por outra
+	// transação. RETURNING diz quais foram efetivamente pegos.
+	rows, err := tx.Query(ctx, `
 UPDATE tickets t
 SET status = 'RESERVED', booking_id = b.id, reserved_until = b.expires_at
 FROM bookings b
-WHERE b.id = $1 AND t.id = ANY($2)`, bookingID, in.TicketIDs); err != nil {
+WHERE b.id = $1
+  AND t.id IN (
+      SELECT t.id FROM tickets t
+      WHERE t.event_id = $2 AND t.id = ANY($3) AND `+freeSeatSQL+`
+      ORDER BY t.id
+      FOR UPDATE OF t SKIP LOCKED)
+RETURNING t.id`, bookingID, in.EventID, in.TicketIDs)
+	if err != nil {
 		return nil, err
+	}
+	got, err := pgx.CollectRows(rows, pgx.RowTo[int64])
+	if err != nil {
+		return nil, err
+	}
+	if len(got) != len(in.TicketIDs) {
+		taken := map[int64]bool{}
+		for _, id := range got {
+			taken[id] = true
+		}
+		var unavailable []int64
+		for _, id := range in.TicketIDs {
+			if !taken[id] {
+				unavailable = append(unavailable, id)
+			}
+		}
+		return nil, &SeatUnavailableError{TicketIDs: unavailable} // defer faz o rollback
 	}
 
 	if err := tx.Commit(ctx); err != nil {
