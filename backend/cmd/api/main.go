@@ -13,6 +13,7 @@ import (
 	"ticketmaster-lite/backend/internal/api"
 	"ticketmaster-lite/backend/internal/db"
 	"ticketmaster-lite/backend/internal/holds"
+	"ticketmaster-lite/backend/internal/live"
 	"ticketmaster-lite/backend/internal/store"
 	"ticketmaster-lite/backend/internal/telemetry"
 )
@@ -92,11 +93,21 @@ func main() {
 		log.Info("seat gate desligado (REDIS_URL vazio): só Postgres")
 	}
 
+	st := store.New(pool, ttl, opts...)
+
+	// Mapa de assentos em tempo real (SSE, ADR-012): LISTEN numa conexão dedicada.
+	hub := live.NewHub(st, databaseURL, log)
+	go hub.Run(ctx)
+
+	// Sem WriteTimeout de propósito: ele cortaria os streams SSE (conexões longas).
 	srv := &http.Server{
 		Addr:              ":" + port,
-		Handler:           api.NewRouter(store.New(pool, ttl, opts...), log),
+		Handler:           api.NewRouter(st, hub, log),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
+	// Shutdown não cancela o contexto das requisições abertas: fechar o hub
+	// encerra os streams SSE para o Shutdown não esperar até o timeout.
+	srv.RegisterOnShutdown(hub.Close)
 
 	// Graceful shutdown: ao receber SIGTERM, para de aceitar conexões e espera as
 	// requisições em andamento. main só retorna (e faz o flush da telemetria nos

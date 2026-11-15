@@ -99,3 +99,27 @@ Formato: contexto → decisão → consequências. Adicione novas no final, nume
   - `grafana/otel-lgtm` é para dev/estudo (sem HA, retenção curta); em produção cada componente seria separado
     ou um SaaS.
 
+
+## ADR-012 — Mapa de assentos em tempo real com SSE + Postgres LISTEN/NOTIFY
+- **Contexto**: a página do evento fazia polling de `GET /api/events/{slug}` a cada 5 s: até 5 s de atraso
+  para ver a compra de outra pessoa e carga proporcional a usuários × tempo, mesmo sem mudança.
+- **Decisão**:
+  1. **SSE** (`GET /api/events/{idOrSlug}/stream`): o servidor manda o mapa completo a cada mudança.
+  2. **Trigger em `tickets`** (migration 002) faz `pg_notify('seat_changes', event_id)`; `internal/live.Hub`
+     escuta com `LISTEN` numa conexão dedicada, relê o mapa (`store.SeatSnapshot`) e faz fan-out.
+  3. **Timer** para o próximo `reserved_until`, porque a expiração preguiçosa (ADR-005) não gera escrita.
+- **Alternativas**:
+  - **WebSocket**: bidirecional, mas aqui o fluxo é só servidor → cliente; SSE é HTTP comum (passa pelo
+    proxy do Vite sem configuração), tem reconexão nativa no `EventSource` e não precisa de biblioteca.
+  - **Broker em memória** (store publica após commit): mais simples, mas só vale com uma instância e
+    exigiria lembrar de publicar em todo caminho de escrita.
+  - **Redis pub/sub**: multi-instância, mas o Redis é opcional (ADR-010) e o publish não é atômico com o commit.
+  - **Diff em vez de snapshot**: economiza bytes, mas exige ordem e entrega garantidas. Com 9 assentos o
+    snapshot é pequeno e idempotente.
+- **Consequências**:
+  - Uma conexão extra no Postgres por instância (fora do pool). Payload do NOTIFY é só o `event_id`.
+  - Rollback não notifica: no loadtest (1×201, 49×409) o stream recebe uma única atualização.
+  - Conexões longas: sem `WriteTimeout`, shutdown fecha os streams via `RegisterOnShutdown`; streams fora
+    do `otelhttp`, com gauge próprio.
+  - Em escala, um snapshot por evento por mudança poderia virar gargalo; o worker já coalesce rajadas, e um
+    debounce curto ou cache (ver roadmap) seriam os próximos passos.

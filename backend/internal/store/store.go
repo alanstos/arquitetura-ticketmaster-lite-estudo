@@ -115,27 +115,45 @@ WHERE e.slug = $1 OR e.id = $2`, slug, id), &ev.EventSummary)
 		return nil, err
 	}
 
+	if ev.Seats, _, err = s.SeatSnapshot(ctx, ev.ID); err != nil {
+		return nil, err
+	}
+	return &ev, nil
+}
+
+// SeatSnapshot devolve o mapa de assentos do evento (status efetivo) e o instante
+// do próximo vencimento de hold (nil se não há hold ativo).
+//
+// nextExpiry existe por causa da expiração preguiçosa (ADR-005): quando um hold
+// vence, nenhum UPDATE acontece — logo nenhum NOTIFY. Quem empurra o mapa em
+// tempo real (internal/live) agenda um timer para esse instante.
+func (s *Store) SeatSnapshot(ctx context.Context, eventID int64) (seats []Seat, nextExpiry *time.Time, err error) {
 	rows, err := s.pool.Query(ctx, `
 SELECT t.id, t.seat_row, t.seat_number,
-       CASE WHEN `+freeSeatSQL+` THEN 'AVAILABLE' ELSE t.status END
+       CASE WHEN `+freeSeatSQL+` THEN 'AVAILABLE' ELSE t.status END,
+       CASE WHEN t.status = 'RESERVED' AND t.reserved_until >= now() THEN t.reserved_until END
 FROM tickets t
 WHERE t.event_id = $1
-ORDER BY t.seat_row, t.seat_number`, ev.ID)
+ORDER BY t.seat_row, t.seat_number`, eventID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer rows.Close()
 
-	ev.Seats = []Seat{}
+	seats = []Seat{}
 	for rows.Next() {
 		var st Seat
-		if err := rows.Scan(&st.TicketID, &st.Row, &st.Number, &st.Status); err != nil {
-			return nil, err
+		var until *time.Time
+		if err := rows.Scan(&st.TicketID, &st.Row, &st.Number, &st.Status, &until); err != nil {
+			return nil, nil, err
 		}
 		st.Label = st.Row + strconv.Itoa(st.Number)
-		ev.Seats = append(ev.Seats, st)
+		seats = append(seats, st)
+		if until != nil && (nextExpiry == nil || until.Before(*nextExpiry)) {
+			nextExpiry = until
+		}
 	}
-	return &ev, rows.Err()
+	return seats, nextExpiry, rows.Err()
 }
 
 // Reserve segura (hold) os assentos por reservationTTL e cria um Booking PENDING.
