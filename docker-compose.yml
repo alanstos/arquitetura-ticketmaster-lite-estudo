@@ -16,6 +16,18 @@ services:
       timeout: 3s
       retries: 30
 
+  redis:
+    image: redis:7-alpine
+    # Só holds efêmeros: sem persistência em disco.
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
   backend:
     build: ./backend
     environment:
@@ -23,10 +35,14 @@ services:
       PORT: "8080"
       RESERVATION_TTL: 5m
       SEED_ON_START: "true"
+      # Seat gate em Redis (ADR-010). Deixe vazio para comparar com "só Postgres".
+      REDIS_URL: ${REDIS_URL-redis://redis:6379/0}
     ports:
       - "8080:8080"
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
   frontend:

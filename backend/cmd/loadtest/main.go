@@ -13,7 +13,9 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"sort"
 	"sync"
+	"time"
 )
 
 type seat struct {
@@ -61,6 +63,7 @@ func main() {
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	counts := map[int]int{}
+	var latencies []time.Duration
 
 	for i := 0; i < *n; i++ {
 		wg.Add(1)
@@ -73,9 +76,12 @@ func main() {
 				"customer_email": fmt.Sprintf("cliente%d@example.com", i),
 			})
 			<-start // todas as goroutines partem juntas
+			t0 := time.Now()
 			r, err := http.Post(*api+"/api/reserve", "application/json", bytes.NewReader(body))
+			elapsed := time.Since(t0)
 			mu.Lock()
 			defer mu.Unlock()
+			latencies = append(latencies, elapsed)
 			if err != nil {
 				counts[-1]++
 				return
@@ -92,6 +98,10 @@ func main() {
 		label := map[int]string{201: "reservado", 409: "conflito (assento já ocupado)", -1: "erro de rede"}[code]
 		fmt.Printf("  %d %-32s %d\n", code, label, c)
 	}
+	sort.Slice(latencies, func(i, j int) bool { return latencies[i] < latencies[j] })
+	pct := func(p float64) time.Duration { return latencies[int(p*float64(len(latencies)-1))] }
+	fmt.Printf("Latência: p50=%v p99=%v máx=%v\n",
+		pct(0.50).Round(time.Microsecond*100), pct(0.99).Round(time.Microsecond*100), latencies[len(latencies)-1].Round(time.Microsecond*100))
 	if counts[201] == 1 {
 		fmt.Println("OK: exatamente uma reserva aceita.")
 	} else {

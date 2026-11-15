@@ -4,7 +4,9 @@
 
 ```
  Browser ──► frontend (Vite dev server :5173) ──/api──► backend Go (:8080) ──► Postgres 16 (:5432)
-              React SPA                          proxy    net/http + pgx         migrations + seed no start
+              React SPA                          proxy    net/http + pgx    │    fonte da verdade
+                                                                            └──► Redis 7 (:6379)
+                                                                                 seat gate (opcional)
 ```
 
 Tudo sobe com `docker compose`. O frontend nunca fala direto com o backend pelo host: o Vite faz proxy de
@@ -44,27 +46,62 @@ usuários paguem pelo mesmo lugar.
 
 ## Concorrência — como o sistema impede venda duplicada
 
-Implementado em `backend/internal/store/store.go` (`Reserve` e `ConfirmBooking`). Estratégia **pessimista**
-com lock de linha, nível de isolamento padrão (READ COMMITTED):
+Implementado em `backend/internal/store/store.go` (`Reserve`, `reserveTx`, `ConfirmBooking`) e
+`backend/internal/holds/redis.go`. Duas camadas (ADR-010):
+
+```
+POST /api/reserve
+  │
+  ├─ 1. Seat gate (Redis, opcional) ── assento já seguro por outro? ──► 409 (não toca no Postgres)
+  │       SET hold:{e<evento>}:<ticket> <token> NX PX <TTL>  (script Lua, tudo ou nada)
+  │       Redis fora/lento (>300 ms) ──► segue só com o Postgres (circuit breaker de 2 s)
+  │
+  └─ 2. Postgres (fonte da verdade) ── UPDATE condicional + SKIP LOCKED ──► 201 ou 409
+          se o Postgres recusar, as chaves do Redis deste cliente são apagadas
+```
+
+### Camada 2 — Postgres (sempre roda, decide de verdade)
+Nível de isolamento padrão (READ COMMITTED), uma transação:
 
 ```sql
 BEGIN;
-SELECT t.id, (status='AVAILABLE' OR (status='RESERVED' AND reserved_until < now())) AS free
-FROM tickets t
-WHERE event_id = $1 AND id = ANY($2)
-ORDER BY id          -- ordem fixa => sem deadlock entre pedidos com assentos em comum
-FOR UPDATE;          -- trava as linhas
--- se algum !free -> ROLLBACK + HTTP 409
-INSERT INTO bookings (...) VALUES (..., 'PENDING', expires_at = now() + TTL);
-UPDATE tickets SET status='RESERVED', booking_id=..., reserved_until=... WHERE id = ANY($2);
+SELECT count(*) FROM tickets WHERE event_id = $1 AND id = ANY($2);   -- pertencem ao evento? (senão 400)
+INSERT INTO bookings (...) VALUES (..., 'PENDING', expires_at = now() + TTL) RETURNING id;
+UPDATE tickets t SET status='RESERVED', booking_id=b.id, reserved_until=b.expires_at
+FROM bookings b
+WHERE b.id = $booking
+  AND t.id IN (SELECT t.id FROM tickets t
+               WHERE event_id = $1 AND id = ANY($2) AND <livre>
+               ORDER BY t.id
+               FOR UPDATE OF t SKIP LOCKED)    -- pula linhas travadas em vez de esperar
+RETURNING t.id;
+-- se voltou menos linhas que o pedido -> ROLLBACK + HTTP 409 (tudo ou nada)
 COMMIT;
 ```
 
-- Duas transações querendo o mesmo assento: a segunda **bloqueia** no `FOR UPDATE` até a primeira terminar.
-  Em READ COMMITTED o Postgres então **re-avalia a linha com a versão já commitada**, vê `RESERVED` e a
-  segunda recebe 409.
-- Pedido de vários assentos é **tudo ou nada**: se qualquer um estiver ocupado, nada é reservado.
-- `make loadtest` dispara 50 reservas simultâneas no mesmo assento: resultado esperado 1×201 e 49×409.
+- **Fail fast**: antes (ADR-004) o `SELECT ... FOR UPDATE` fazia os perdedores **esperarem** na fila de lock
+  só para receber 409 no final, cada um segurando uma conexão do pool. Com `SKIP LOCKED`, linha travada por
+  outra transação em andamento é tratada como ocupada na hora.
+- Linha livre e não travada é travada e o predicado `<livre>` é **reavaliado na versão mais recente** da linha
+  (comportamento do `FOR UPDATE` em READ COMMITTED), então duas transações nunca pegam o mesmo assento.
+- Trade-off: se a transação que segura o lock fizer rollback (ex.: o pedido dela tinha outro assento ocupado),
+  quem foi recusado recebeu 409 por um assento que acabou ficando livre. Aceitável: o usuário tenta de novo.
+- `make loadtest` dispara 50 reservas simultâneas no mesmo assento: resultado esperado 1×201 e 49×409,
+  e mostra a latência (p50/p99/máx).
+
+### Camada 1 — Seat gate em Redis (filtro, não garantia)
+- Uma chave por assento com o **mesmo TTL do hold**. `acquire` (Lua) só grava se **nenhuma** chave existir e
+  devolve quais estavam ocupadas; `release` (Lua) apaga só as chaves com **o token deste cliente**
+  (compare-and-delete), para nunca liberar o hold de outra pessoa.
+- Hash tag `{e<evento>}` deixa todas as chaves de um evento no mesmo slot (compatível com Redis Cluster).
+- **Por que não é a fonte da verdade**: replicação assíncrona/failover podem perder chaves, e Redis + Postgres
+  não commitam juntos. Por isso o Postgres sempre revalida; o pior caso de um erro no Redis é uma recusa
+  indevida até o TTL (ex.: processo morreu entre o `SET` no Redis e o `ROLLBACK`), nunca venda duplicada.
+- **Degradação**: cada chamada tem prazo duro de 300 ms; falhou → circuit breaker abre por 2 s e as reservas
+  vão direto ao Postgres. Se a chamada estourou o prazo, o gate tenta apagar em background as chaves que o
+  script pode ter gravado. Medido com o container do Redis parado: sem o prazo duro a resolução DNS do host
+  `redis` serializava as conexões e 50 reservas levavam até 25 s.
+- `REDIS_URL` vazio desliga o gate (útil para comparar com `make loadtest`).
 
 ### Expiração
 Não há job de limpeza. Um ticket `RESERVED` com `reserved_until < now()` é **considerado livre** em todas as
@@ -99,3 +136,4 @@ inclusivo. Só eventos futuros (`starts_at >= now()`) são listados.
 | `PORT` | `8080` | porta HTTP |
 | `RESERVATION_TTL` | `5m` | duração do hold (formato Go: `30s`, `2m`) |
 | `SEED_ON_START` | `true` | popula dados mock se `events` vazia |
+| `REDIS_URL` | vazio (compose: `redis://redis:6379/0`) | liga o seat gate em Redis; vazio = só Postgres |

@@ -12,6 +12,7 @@ import (
 
 	"ticketmaster-lite/backend/internal/api"
 	"ticketmaster-lite/backend/internal/db"
+	"ticketmaster-lite/backend/internal/holds"
 	"ticketmaster-lite/backend/internal/store"
 )
 
@@ -47,9 +48,29 @@ func main() {
 		}
 	}
 
+	// Redis é opcional: REDIS_URL vazio => reservas decididas só pelo Postgres.
+	opts := []store.Option{store.WithLogger(log)}
+	if redisURL := os.Getenv("REDIS_URL"); redisURL != "" {
+		gate, err := holds.New(redisURL)
+		if err != nil {
+			log.Error("redis", "erro", err)
+			os.Exit(1)
+		}
+		defer gate.Close()
+		pingCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		if err := gate.Ping(pingCtx); err != nil {
+			log.Warn("redis indisponível na partida; o seat gate será tentado a cada reserva", "erro", err)
+		}
+		cancel()
+		opts = append(opts, store.WithSeatGate(gate))
+		log.Info("seat gate (Redis) ligado")
+	} else {
+		log.Info("seat gate desligado (REDIS_URL vazio): só Postgres")
+	}
+
 	srv := &http.Server{
 		Addr:              ":" + port,
-		Handler:           api.NewRouter(store.New(pool, ttl), log),
+		Handler:           api.NewRouter(store.New(pool, ttl, opts...), log),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

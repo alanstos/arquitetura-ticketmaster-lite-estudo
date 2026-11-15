@@ -14,7 +14,8 @@ sem venda duplicada do mesmo assento.
 - Windows + WSL2 + Docker. **Go não está instalado no host** — compilar/rodar via Docker.
 - `backend/` — Go 1.23, `net/http` (roteamento do Go 1.22+), `pgx/v5`. Sem framework.
 - `frontend/` — React 18 + Vite + TypeScript + react-router-dom 6. Dev server com proxy `/api` → backend.
-- Postgres 16 (extensão `unaccent` para busca sem acento).
+- Postgres 16 (extensão `unaccent` para busca sem acento) — fonte da verdade dos assentos.
+- Redis 7 (opcional, `REDIS_URL`): só filtro rápido de holds na frente do Postgres (ADR-010), nunca fonte da verdade.
 
 ## Comandos
 `make` pode não estar instalado no WSL (`sudo apt install make`); os alvos são só atalhos para `docker compose`.
@@ -35,6 +36,7 @@ backend/
   cmd/loadtest/       teste de concorrência (binário incluso na imagem: /app/loadtest)
   internal/api/       handlers HTTP + validação + mapeamento de erros -> status
   internal/store/     queries SQL e regras de reserva/confirmação (concorrência mora aqui)
+  internal/holds/     seat gate em Redis (implementa store.SeatGate; Lua, timeout, circuit breaker)
   internal/db/        conexão, runner de migrations (embed), seed.sql
 frontend/src/
   api.ts              tipos + cliente HTTP
