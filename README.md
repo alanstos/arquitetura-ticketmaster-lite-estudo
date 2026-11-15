@@ -8,6 +8,7 @@ o mesmo assento**. Monorepo: backend Go + frontend React + Postgres, tudo em Doc
 make up        # ou: docker compose up -d --build
 ```
 - Web: http://localhost:5173 — ex.: http://localhost:5173/event/jota-quest-rio-de-janeiro
+- Relatório (admin): http://localhost:5173/admin — ingressos vendidos/disponíveis e compradores, filtro por local e data
 - API: http://localhost:8080/api/events
 
 O banco é criado e populado com eventos mock automaticamente no start. `make reset` recria do zero.

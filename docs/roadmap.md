@@ -6,6 +6,8 @@
 - [ ] Job que marca bookings vencidos como `EXPIRED` e libera tickets
 - [ ] Atualização em tempo real do mapa (SSE/WebSocket) em vez de polling
 - [ ] Autenticação de usuário e "meus ingressos"
+- [ ] Proteger `/admin` e `/api/admin/*` (auth + papel de administrador) — hoje expõe nome/e-mail (ADR-009)
+- [ ] Paginação e exportação CSV no relatório `/admin`
 - [ ] Venues com tamanhos variados / setores e preços por setor
 - [ ] Paginação na listagem/busca; índice trigram (`pg_trgm`) para a busca
 - [ ] Idempotency-Key no `POST /reserve`
@@ -13,6 +15,14 @@
 - [ ] Trocar runner de migrations por golang-migrate ou goose
 
 ## Histórico
+### 2026-11-15 — relatório `/admin`
+- Página `/admin` (link "Relatório" no topo): tabela com todos os assentos — vendido / reservado / disponível —
+  e o comprador (nome, e-mail, data da compra ou fim do hold), valor e receita dos vendidos.
+- Filtros por local e intervalo de datas do evento (servidor) e por status (cliente); tudo na query string.
+- Botão "Atualizar" com ícone (sem polling).
+- Backend: `GET /api/venues` e `GET /api/admin/tickets`; validação de datas extraída para `parseDateRange`
+  (reaproveitada pela busca). Decisão registrada no ADR-009.
+
 ### 2026-11-08 — fix countdown da reserva
 - Bug: a tela dizia "O tempo da sua reserva acabou" logo após reservar. O `useCountdown` guardava o valor em
   estado (0 antes da reserva) e, no 1º render com a reserva, o efeito de expiração via 0 e descartava o booking.

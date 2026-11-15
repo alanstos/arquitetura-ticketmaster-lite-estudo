@@ -310,3 +310,70 @@ SELECT id, seat_row || seat_number FROM tickets WHERE booking_id = $1 ORDER BY s
 	}
 	return &b, rows.Err()
 }
+
+// ListVenues devolve todos os locais (usado no filtro do relatório).
+func (s *Store) ListVenues(ctx context.Context) ([]Venue, error) {
+	rows, err := s.pool.Query(ctx, `
+SELECT id, name, city, address, seat_rows, seat_cols FROM venues ORDER BY city, name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	venues := []Venue{}
+	for rows.Next() {
+		var v Venue
+		if err := rows.Scan(&v.ID, &v.Name, &v.City, &v.Address, &v.Rows, &v.Cols); err != nil {
+			return nil, err
+		}
+		venues = append(venues, v)
+	}
+	return venues, rows.Err()
+}
+
+// AdminTickets lista todos os assentos (inclusive de eventos passados) com o
+// status efetivo e o comprador. Só leitura: não trava linhas nem "limpa"
+// holds vencidos — aplica a mesma regra de expiração preguiçosa das outras
+// consultas (freeSeatSQL), então o relatório bate com o mapa de assentos.
+func (s *Store) AdminTickets(ctx context.Context, f AdminFilter) ([]AdminTicket, error) {
+	rows, err := s.pool.Query(ctx, `
+SELECT t.id, t.seat_row || t.seat_number,
+       CASE WHEN `+freeSeatSQL+` THEN 'AVAILABLE' ELSE t.status END AS eff_status,
+       e.price_cents, e.id, e.slug, e.name, e.starts_at,
+       v.id, v.name, v.city,
+       b.id::text, b.customer_name, b.customer_email, b.created_at, b.confirmed_at, t.reserved_until
+FROM tickets t
+JOIN events e ON e.id = t.event_id
+JOIN venues v ON v.id = e.venue_id
+-- O LEFT JOIN só traz o booking se o assento NÃO estiver livre.
+LEFT JOIN bookings b ON b.id = t.booking_id AND NOT `+freeSeatSQL+`
+WHERE ($1::bigint = 0 OR v.id = $1)
+  AND ($2::date IS NULL OR (e.starts_at AT TIME ZONE 'America/Sao_Paulo')::date >= $2::date)
+  AND ($3::date IS NULL OR (e.starts_at AT TIME ZONE 'America/Sao_Paulo')::date <= $3::date)
+ORDER BY e.starts_at, e.id, t.seat_row, t.seat_number`, f.VenueID, f.StartDate, f.EndDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	tickets := []AdminTicket{}
+	for rows.Next() {
+		var t AdminTicket
+		// Colunas do booking são NULL quando o assento está livre.
+		var bID, bName, bEmail *string
+		var bCreated, bConfirmed, reservedUntil *time.Time
+		if err := rows.Scan(&t.TicketID, &t.Seat, &t.Status, &t.PriceCents,
+			&t.EventID, &t.EventSlug, &t.EventName, &t.EventStartsAt,
+			&t.VenueID, &t.VenueName, &t.VenueCity,
+			&bID, &bName, &bEmail, &bCreated, &bConfirmed, &reservedUntil); err != nil {
+			return nil, err
+		}
+		if bID != nil {
+			t.Buyer = &AdminBuyer{BookingID: *bID, Name: *bName, Email: *bEmail, BookedAt: *bCreated, ConfirmedAt: bConfirmed}
+			if t.Status == SeatReserved {
+				t.Buyer.ReservedUntil = reservedUntil
+			}
+		}
+		tickets = append(tickets, t)
+	}
+	return tickets, rows.Err()
+}

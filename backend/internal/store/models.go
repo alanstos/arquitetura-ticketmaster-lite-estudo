@@ -101,3 +101,40 @@ type SeatUnavailableError struct{ TicketIDs []int64 }
 func (e *SeatUnavailableError) Error() string {
 	return fmt.Sprintf("assento(s) indisponível(is): %v", e.TicketIDs)
 }
+
+// ---- relatório administrativo (/admin) ----
+
+// AdminFilter filtra o relatório de ingressos. Campos nil/zero = filtro não aplicado.
+type AdminFilter struct {
+	VenueID   int64
+	StartDate *time.Time // inclusivo, data no fuso America/Sao_Paulo
+	EndDate   *time.Time // inclusivo
+}
+
+// AdminTicket é uma linha do relatório: um assento de um evento, com o status
+// efetivo e, quando ocupado, os dados de quem comprou/reservou.
+type AdminTicket struct {
+	TicketID      int64     `json:"ticket_id"`
+	Seat          string    `json:"seat"`
+	Status        string    `json:"status"` // efetivo: hold vencido aparece como AVAILABLE
+	PriceCents    int       `json:"price_cents"`
+	EventID       int64     `json:"event_id"`
+	EventSlug     string    `json:"event_slug"`
+	EventName     string    `json:"event_name"`
+	EventStartsAt time.Time `json:"event_starts_at"`
+	VenueID       int64     `json:"venue_id"`
+	VenueName     string    `json:"venue_name"`
+	VenueCity     string    `json:"venue_city"`
+	// Buyer é nil quando o assento está livre (inclusive hold vencido: o
+	// cliente daquele booking não "possui" mais o assento).
+	Buyer *AdminBuyer `json:"buyer"`
+}
+
+type AdminBuyer struct {
+	BookingID     string     `json:"booking_id"`
+	Name          string     `json:"name"`
+	Email         string     `json:"email"`
+	BookedAt      time.Time  `json:"booked_at"`                // criação do booking (início do hold)
+	ConfirmedAt   *time.Time `json:"confirmed_at,omitempty"`   // quando SOLD
+	ReservedUntil *time.Time `json:"reserved_until,omitempty"` // quando RESERVED (hold ativo)
+}

@@ -38,3 +38,13 @@ Formato: contexto → decisão → consequências. Adicione novas no final, nume
 ## ADR-008 — Frontend em Vite dev server dentro do Docker
 - **Decisão**: container roda `vite` com hot reload e proxy `/api`; sem nginx por enquanto.
 - **Consequências**: ótimo para estudo; não é setup de produção.
+
+## ADR-009 — Relatório `/admin` sem autenticação, uma linha por assento
+- **Contexto**: precisamos visualizar ingressos vendidos/disponíveis e quem comprou, filtrando por local e data.
+- **Decisão**: endpoint de leitura `GET /api/admin/tickets` que parte de `tickets` (LEFT JOIN `bookings` só
+  quando o assento não está livre) e devolve uma linha por assento; status efetivo calculado com `freeSeatSQL`.
+  Filtros de local/data no servidor; filtro de status e totais no cliente (volume máximo = 9 × nº de eventos).
+  Atualização manual (botão), sem polling.
+- **Consequências**: relatório consistente com o mapa de assentos e sem custo de lock. **Expõe dados pessoais
+  sem autenticação** — aceitável apenas em ambiente de estudo; proteger `/api/admin/*` antes de qualquer
+  uso real (item no roadmap). Sem paginação: se o volume crescer, paginar e mover o filtro de status para o servidor.

@@ -12,6 +12,8 @@ Erros: `{"error": "mensagem"}`.
 | POST | `/api/reserve` | segura assentos (hold) e cria booking PENDING |
 | POST | `/api/booking` | confirma (simula pagamento) um booking |
 | GET | `/api/booking/{id}` | consulta um booking |
+| GET | `/api/venues` | lista os locais (filtro do relatório) |
+| GET | `/api/admin/tickets?venueId=&startDate=&endDate=` | relatório: todos os assentos + comprador (**sem auth**) |
 
 > Rascunho original → implementado: `GET /event/{event_id}` virou `GET /api/events/{idOrSlug}`;
 > `GET /search`, `POST /reserve`, `POST /booking` mantidos (sob `/api`).
@@ -61,9 +63,47 @@ Todos opcionais. 400 se data inválida ou `endDate < startDate`. Exemplo:
 - **404** → booking não existe
 - **410** → reserva expirou
 
+## GET /api/venues
+```json
+[{"id": 1, "name": "Qualistage", "city": "Rio de Janeiro", "address": "...", "rows": 3, "cols": 3}]
+```
+Ordenado por cidade e nome.
+
+## GET /api/admin/tickets
+Relatório usado pela página `/admin`. Devolve **um item por assento** (vendido, reservado ou disponível),
+ordenado por data do evento e assento. Diferente da busca pública, **inclui eventos passados**.
+
+> ⚠️ Sem autenticação: expõe nome e e-mail dos compradores. Aceitável só no projeto de estudo (ADR-009).
+
+| Param | Formato | Observação |
+|---|---|---|
+| `venueId` | inteiro > 0 | filtra pelo local (ids de `GET /api/venues`) |
+| `startDate` | `YYYY-MM-DD` | data do evento, inclusivo, fuso America/Sao_Paulo |
+| `endDate` | `YYYY-MM-DD` | inclusivo |
+
+Todos opcionais. 400 se `venueId` não for inteiro positivo, data inválida ou `endDate < startDate`.
+
+```json
+[{
+  "ticket_id": 4, "seat": "B1", "status": "SOLD", "price_cents": 18000,
+  "event_id": 1, "event_slug": "jota-quest-rio-de-janeiro", "event_name": "Jota Quest",
+  "event_starts_at": "2026-12-13T00:00:00Z",
+  "venue_id": 1, "venue_name": "Qualistage", "venue_city": "Rio de Janeiro",
+  "buyer": {
+    "booking_id": "…", "name": "Cliente Seed", "email": "…",
+    "booked_at": "2026-11-09T00:56:06Z",
+    "confirmed_at": "2026-11-09T00:56:06Z"
+  }
+}]
+```
+- `status` é o **efetivo**: hold vencido aparece como `AVAILABLE`, igual ao mapa de assentos.
+- `buyer` é `null` quando o assento está livre (inclusive hold vencido).
+- `buyer.confirmed_at` vem quando `SOLD`; `buyer.reserved_until` (fim do hold) vem quando `RESERVED`.
+
 ## Exemplos com curl
 ```bash
 curl localhost:8080/api/events/jota-quest-rio-de-janeiro
 curl -X POST localhost:8080/api/reserve -d '{"event_id":1,"ticket_ids":[1],"customer_name":"Ana","customer_email":"ana@x.com"}'
 curl -X POST localhost:8080/api/booking -d '{"booking_id":"<id>"}'
+curl "localhost:8080/api/admin/tickets?venueId=1&startDate=2026-12-01"
 ```

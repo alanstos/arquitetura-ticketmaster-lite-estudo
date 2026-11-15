@@ -101,6 +101,44 @@ export function confirmBooking(bookingId: string) {
   })
 }
 
+// ---- relatório administrativo (/admin) ----
+
+export type AdminTicket = {
+  ticket_id: number
+  seat: string
+  status: SeatStatus // efetivo: hold vencido já vem como AVAILABLE
+  price_cents: number
+  event_id: number
+  event_slug: string
+  event_name: string
+  event_starts_at: string
+  venue_id: number
+  venue_name: string
+  venue_city: string
+  buyer: {
+    booking_id: string
+    name: string
+    email: string
+    booked_at: string
+    confirmed_at?: string // presente quando SOLD
+    reserved_until?: string // presente quando RESERVED
+  } | null // null = assento livre
+}
+
+export type AdminFilter = { venueId?: string; startDate?: string; endDate?: string }
+
+export function listVenues() {
+  return request<Venue[]>('/venues')
+}
+
+export function adminTickets(p: AdminFilter) {
+  const qs = new URLSearchParams()
+  if (p.venueId) qs.set('venueId', p.venueId)
+  if (p.startDate) qs.set('startDate', p.startDate)
+  if (p.endDate) qs.set('endDate', p.endDate)
+  return request<AdminTicket[]>(`/admin/tickets?${qs}`)
+}
+
 export const formatPrice = (cents: number) =>
   (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
