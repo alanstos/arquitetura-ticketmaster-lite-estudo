@@ -4,17 +4,19 @@ import {
   ApiError,
   Booking,
   EventDetail,
+  Seat,
+  SeatsMessage,
   confirmBooking,
   formatDate,
   formatPrice,
   getEvent,
   reserve,
+  seatStreamUrl,
 } from '../api'
 import SeatMap from '../components/SeatMap'
 
-const POLL_MS = 5000
-
 // Fluxo: selecionar assentos -> POST /reserve (hold com prazo) -> POST /booking (confirma).
+// O mapa de assentos é atualizado pelo servidor via SSE (GET /api/events/{slug}/stream).
 export default function EventPage() {
   const { slug = '' } = useParams()
   const [event, setEvent] = useState<EventDetail | null>(null)
@@ -26,38 +28,60 @@ export default function EventPage() {
   const [deadline, setDeadline] = useState<number | null>(null)
   const [message, setMessage] = useState<{ kind: 'error' | 'success' | 'info'; text: string } | null>(null)
   const [busy, setBusy] = useState(false)
+  // false enquanto o EventSource está reconectando (mostra um aviso discreto).
+  const [live, setLive] = useState(true)
 
-  const load = useCallback(async () => {
-    try {
-      const ev = await getEvent(slug)
-      setEvent(ev)
-      setError(null)
-      // Remove da seleção assentos que outra pessoa pegou nesse meio tempo.
-      setSelected((prev) => {
-        const free = new Set(ev.seats.filter((s) => s.status === 'AVAILABLE').map((s) => s.ticket_id))
-        const next = new Set([...prev].filter((id) => free.has(id)))
-        return next.size === prev.size ? prev : next
-      })
-    } catch (e) {
-      setError(e instanceof ApiError && e.status === 404 ? 'Evento não encontrado.' : (e as Error).message)
-    }
-  }, [slug])
+  // Remove da seleção assentos que outra pessoa pegou nesse meio tempo.
+  const pruneSelection = useCallback((seats: Seat[]) => {
+    setSelected((prev) => {
+      const free = new Set(seats.filter((s) => s.status === 'AVAILABLE').map((s) => s.ticket_id))
+      const next = new Set([...prev].filter((id) => free.has(id)))
+      return next.size === prev.size ? prev : next
+    })
+  }, [])
 
-  // Polling simples para refletir compras de outros usuários.
+  // Dados do evento (nome, local, preço) + mapa inicial: uma vez por slug.
   useEffect(() => {
-    load()
-    const t = setInterval(load, POLL_MS)
-    return () => clearInterval(t)
-  }, [load])
+    let cancelled = false
+    getEvent(slug)
+      .then((ev) => {
+        if (cancelled) return
+        setEvent(ev)
+        setError(null)
+        pruneSelection(ev.seats)
+      })
+      .catch((e) => {
+        if (cancelled) return
+        setError(e instanceof ApiError && e.status === 404 ? 'Evento não encontrado.' : (e as Error).message)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [slug, pruneSelection])
+
+  // Atualização em tempo real: o servidor manda o mapa completo a cada mudança
+  // (reserva, compra ou hold vencido de qualquer usuário). O EventSource reconecta
+  // sozinho se a conexão cair, e o servidor manda um snapshot novo ao reconectar.
+  useEffect(() => {
+    const es = new EventSource(seatStreamUrl(slug))
+    es.addEventListener('seats', (e) => {
+      const { seats } = JSON.parse((e as MessageEvent<string>).data) as SeatsMessage
+      setEvent((ev) => (ev ? { ...ev, seats } : ev))
+      pruneSelection(seats)
+      setLive(true)
+    })
+    es.onerror = () => setLive(false)
+    return () => es.close()
+  }, [slug, pruneSelection])
 
   const secondsLeft = useCountdown(booking?.status === 'PENDING' ? deadline : null)
   useEffect(() => {
     if (booking?.status === 'PENDING' && secondsLeft !== null && secondsLeft <= 0) {
+      // O mapa se atualiza sozinho: o servidor agenda um refresh para o vencimento do hold.
       setBooking(null)
       setMessage({ kind: 'error', text: 'O tempo da sua reserva acabou. Os assentos foram liberados.' })
-      load()
     }
-  }, [secondsLeft, booking, load])
+  }, [secondsLeft, booking])
 
   if (error) return <p className="alert error">{error} <Link to="/">Voltar</Link></p>
   if (!event) return <p>Carregando…</p>
@@ -99,7 +123,6 @@ export default function EventPage() {
       }
     } finally {
       setBusy(false)
-      load()
     }
   }
 
@@ -115,7 +138,6 @@ export default function EventPage() {
       setMessage({ kind: 'error', text: (err as Error).message })
     } finally {
       setBusy(false)
-      load()
     }
   }
 
@@ -143,7 +165,8 @@ export default function EventPage() {
         />
 
         <aside className="checkout card">
-          {message && <p className={`alert ${message.kind}`}>{message.text}</p>}
+          {!live && <p className="alert info">Reconectando ao mapa em tempo real…</p>}
+          {message &&<p className={`alert ${message.kind}`}>{message.text}</p>}
 
           {pending && booking && (
             <>

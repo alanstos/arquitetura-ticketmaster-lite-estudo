@@ -85,6 +85,12 @@ export function getEvent(slug: string) {
   return request<EventDetail>(`/events/${encodeURIComponent(slug)}`)
 }
 
+// URL do stream SSE do mapa de assentos (usada com `new EventSource(...)`).
+// Cada mensagem `seats` traz o mapa completo: substitui o que o cliente tem.
+export const seatStreamUrl = (slug: string) => `/api/events/${encodeURIComponent(slug)}/stream`
+
+export type SeatsMessage = { seats: Seat[] }
+
 export function reserve(input: {
   event_id: number
   ticket_ids: number[]

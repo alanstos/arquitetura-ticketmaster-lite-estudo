@@ -7,7 +7,6 @@
 - [ ] Fila virtual / rate limit por evento no Redis para aberturas de venda
 - [ ] Endpoint para cancelar reserva (liberar hold no Postgres e no Redis antes do TTL)
 - [ ] Job que marca bookings vencidos como `EXPIRED` e libera tickets
-- [ ] Atualização em tempo real do mapa (SSE/WebSocket) em vez de polling
 - [ ] Autenticação de usuário e "meus ingressos"
 - [ ] Proteger `/admin` e `/api/admin/*` (auth + papel de administrador) — hoje expõe nome/e-mail (ADR-009)
 - [ ] Paginação e exportação CSV no relatório `/admin`
@@ -21,6 +20,17 @@
 - [ ] Observabilidade: SLO de disponibilidade/latência da reserva; testar envio ao Datadog via OTLP
 
 ## Histórico
+### 2026-11-15 — Mapa de assentos em tempo real (SSE)
+- [x] Atualização em tempo real do mapa (SSE/WebSocket) em vez de polling.
+- `GET /api/events/{idOrSlug}/stream` (Server-Sent Events) com snapshot completo do mapa a cada mudança.
+- Migration `002_seat_notify`: trigger em `tickets` → `pg_notify('seat_changes', event_id)`.
+- Novo `internal/live`: `LISTEN` em conexão dedicada (reconexão com backoff), worker único que coalesce e
+  serializa snapshots, timer para o próximo vencimento de hold (expiração preguiçosa), gauge
+  `ticketmaster.sse.subscribers`. `store.SeatSnapshot` extraído de `GetEvent`.
+- Frontend: `EventPage` usa `EventSource` em vez de `setInterval`; aviso "reconectando…" se o stream cair.
+- Validado: push na reserva, liberação no vencimento do hold sem escrita, loadtest 1×201/49×409 com 1 só
+  atualização no stream, shutdown < 1 s com stream aberto. Decisão no ADR-012.
+
 ### 2026-11-15 — Observabilidade (OpenTelemetry + Grafana LGTM)
 - Novo `internal/telemetry`: traces, métricas e logs via OTLP/HTTP; `slog` em JSON com `trace_id`/`span_id`.
 - Instrumentação: `otelhttp` (span/métrica por rota), `otelpgx` (span por query + métricas do pool),

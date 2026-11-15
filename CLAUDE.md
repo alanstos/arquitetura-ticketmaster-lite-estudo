@@ -41,12 +41,13 @@ backend/
   internal/api/       handlers HTTP + validação + mapeamento de erros -> status
   internal/store/     queries SQL e regras de reserva/confirmação (concorrência mora aqui)
   internal/holds/     seat gate em Redis (implementa store.SeatGate; Lua, timeout, circuit breaker)
+  internal/live/      mapa de assentos em tempo real: LISTEN/NOTIFY do Postgres -> hub -> SSE (ADR-012)
   internal/db/        conexão, runner de migrations (embed), seed.sql
   internal/telemetry/ setup do OpenTelemetry (traces/métricas/logs OTLP) + logger slog com trace_id
 frontend/src/
   api.ts              tipos + cliente HTTP
   pages/HomePage.tsx  lista + busca (filtros na query string)
-  pages/EventPage.tsx detalhe, mapa de assentos, reserva, countdown, confirmação
+  pages/EventPage.tsx detalhe, mapa de assentos (SSE via EventSource), reserva, countdown, confirmação
   pages/AdminPage.tsx relatório de ingressos (filtros local/data/status, botão atualizar)
   components/SeatMap.tsx
 observability/        provisioning + dashboard JSON do Grafana (montados no container lgtm)

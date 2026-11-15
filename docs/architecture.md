@@ -123,7 +123,7 @@ inclusivo. Só eventos futuros (`starts_at >= now()`) são listados.
 ## Frontend
 - `/` — lista de eventos + formulário de busca; filtros ficam na query string.
 - `/event/:slug` — URL amigável; mostra o mapa 3x3 (livre / selecionado / sua reserva / reservado / vendido),
-  faz **polling a cada 5 s** para refletir compras de outros usuários, countdown do hold e botão de confirmar.
+  recebe o mapa **em tempo real via SSE** (ver abaixo), countdown do hold e botão de confirmar.
 - `/admin` — **relatório de ingressos** (link "Relatório" no topo): tabela com todos os assentos, status
   (vendido / reservado / disponível), comprador (nome, e-mail), data da compra ou fim do hold e valor.
   - Filtros de **local** e **intervalo de datas do evento** vão para o servidor (`GET /api/admin/tickets`);
@@ -131,6 +131,38 @@ inclusivo. Só eventos futuros (`starts_at >= now()`) são listados.
     Todos ficam na query string (`/admin?venueId=1&startDate=...&status=SOLD`).
   - **Sem polling**: recarrega só ao mudar filtros ou clicar em "Atualizar" (ícone gira durante a carga).
   - Leitura pura, sem lock: usa a mesma regra de expiração preguiçosa (`freeSeatSQL`), então bate com o mapa.
+
+## Mapa de assentos em tempo real (SSE, ADR-012)
+
+Substitui o polling de 5 s. O navegador abre `GET /api/events/{slug}/stream` (`EventSource`) e o servidor
+empurra o mapa completo sempre que ele muda.
+
+```
+UPDATE tickets ─► trigger pg_notify('seat_changes', event_id)     (migration 002; entregue só no COMMIT)
+                     │
+   internal/live.Hub: conexão pgx dedicada com LISTEN ─► marca o evento como "sujo"
+                     │
+   worker (1 goroutine): 1 query SeatSnapshot por evento sujo ─► fan-out para os assinantes SSE do evento
+                     │                                          └─► timer para o próximo reserved_until
+   handler SSE: canal com buffer 1 ("último vence") ─► event: seats / data: {...}
+```
+
+- **Por que LISTEN/NOTIFY**: o NOTIFY é transacional — rollback (os 49 perdedores do loadtest) não notifica,
+  e notificações iguais na mesma transação são colapsadas (reservar 3 assentos = 1 aviso). Funciona com
+  várias instâncias do backend (cada uma tem seu LISTEN) e captura qualquer escrita, inclusive SQL manual.
+- **A notificação só diz "o evento X mudou"**: o hub relê o mapa no Postgres. Perder ou duplicar um aviso
+  nunca deixa o cliente num estado errado; ao reconectar o LISTEN, o hub relê todos os eventos assistidos.
+- **Expiração preguiçosa × tempo real**: um hold que vence não gera UPDATE, logo não gera NOTIFY.
+  `SeatSnapshot` devolve o próximo `reserved_until` e o hub agenda um `time.AfterFunc` (+500 ms) para reler.
+- **Um worker só**: serializa os snapshots (um resultado antigo nunca chega depois de um novo) e coalesce
+  rajadas. Eventos sem assinantes não geram query.
+- **Shutdown**: `srv.RegisterOnShutdown(hub.Close)` fecha os canais e encerra os streams; sem isso o
+  `Shutdown` esperaria o timeout. O servidor não tem `WriteTimeout` (cortaria os streams).
+- **Observabilidade**: os streams ficam fora do `otelhttp` (span de minutos distorceria a latência); há o
+  gauge `ticketmaster.sse.subscribers` e o span `live.refresh` por snapshot. `statusRecorder` implementa
+  `Unwrap` para o `http.ResponseController` achar o `Flush`.
+- Limite conhecido: em HTTP/1.1 o navegador abre no máximo 6 conexões por origem — muitas abas do mesmo
+  site esgotam esse limite (HTTP/2 resolve).
 
 ## Observabilidade (ADR-011)
 

@@ -9,6 +9,7 @@ Erros: `{"error": "mensagem"}`.
 | GET | `/api/health/ready` | readiness: pinga Postgres e Redis (ver abaixo). `/api/health` é alias |
 | GET | `/api/events` | eventos futuros, ordenados por data |
 | GET | `/api/events/{idOrSlug}` | detalhe + assentos (aceita slug ou id numérico) |
+| GET | `/api/events/{idOrSlug}/stream` | **SSE**: mapa de assentos em tempo real (ver abaixo) |
 | GET | `/api/search?keyword=&startDate=&endDate=` | busca |
 | POST | `/api/reserve` | segura assentos (hold) e cria booking PENDING |
 | POST | `/api/booking` | confirma (simula pagamento) um booking |
@@ -35,6 +36,23 @@ Mesmo objeto acima + `seats`:
 "seats": [{"ticket_id": 1, "row": "A", "number": 1, "label": "A1", "status": "AVAILABLE"}]
 ```
 `status`: `AVAILABLE` | `RESERVED` | `SOLD` (reserva vencida já aparece como `AVAILABLE`). 404 se não existir.
+
+## GET /api/events/{idOrSlug}/stream (Server-Sent Events)
+Conexão longa com `Content-Type: text/event-stream`. 404 JSON se o evento não existir. Formato:
+```
+retry: 3000
+
+event: seats
+data: {"seats":[{"ticket_id":1,"row":"A","number":1,"label":"A1","status":"RESERVED"}, ...]}
+
+: ping
+```
+- A 1ª mensagem `seats` chega logo após conectar; as seguintes a cada mudança no mapa — reserva, compra
+  ou **hold vencido** (o servidor agenda um refresh para o próximo `reserved_until`).
+- Cada mensagem traz o mapa **completo** (snapshot, não diff): o cliente substitui o que tem.
+- `: ping` (comentário, ignorado pelo navegador) a cada 20 s mantém proxies sem fechar a conexão.
+- Conexão caiu → o `EventSource` reconecta sozinho após `retry` (3 s) e recebe um snapshot novo.
+- Testar: `curl -N http://localhost:8080/api/events/jota-quest-rio-de-janeiro/stream`
 
 ## GET /api/search
 | Param | Formato | Observação |

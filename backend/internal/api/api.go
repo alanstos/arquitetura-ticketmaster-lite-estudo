@@ -8,6 +8,8 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/mail"
@@ -21,20 +23,22 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
+	"ticketmaster-lite/backend/internal/live"
 	"ticketmaster-lite/backend/internal/store"
 )
 
 // handler agrupa as dependências compartilhadas pelos endpoints.
 type handler struct {
 	st  *store.Store
+	hub *live.Hub
 	log *slog.Logger
 }
 
 // NewRouter registra as rotas e devolve o handler HTTP já envolvido pelos
 // middlewares de observabilidade: otelhttp (span + métricas por requisição) por
 // fora e observe (log de acesso + nome da rota no span/métricas) por dentro.
-func NewRouter(st *store.Store, log *slog.Logger) http.Handler {
-	h := &handler{st: st, log: log}
+func NewRouter(st *store.Store, hub *live.Hub, log *slog.Logger) http.Handler {
+	h := &handler{st: st, hub: hub, log: log}
 	mux := http.NewServeMux()
 	// Desde o Go 1.22 o ServeMux aceita o método no padrão ("GET /...") e
 	// curingas no caminho ({idOrSlug}), lidos depois com r.PathValue.
@@ -49,6 +53,7 @@ func NewRouter(st *store.Store, log *slog.Logger) http.Handler {
 	mux.HandleFunc("GET /api/health", h.ready)
 	mux.HandleFunc("GET /api/events", h.listEvents)
 	mux.HandleFunc("GET /api/events/{idOrSlug}", h.getEvent)
+	mux.HandleFunc("GET /api/events/{idOrSlug}/stream", h.eventStream) // SSE do mapa de assentos (ADR-012)
 	mux.HandleFunc("GET /api/search", h.search)
 	mux.HandleFunc("POST /api/reserve", h.reserve)        // fase 1: segura os assentos (hold com TTL)
 	mux.HandleFunc("POST /api/booking", h.confirmBooking) // fase 2: confirma/paga a reserva
@@ -59,7 +64,9 @@ func NewRouter(st *store.Store, log *slog.Logger) http.Handler {
 	mux.HandleFunc("GET /api/admin/tickets", h.adminTickets)
 	return otelhttp.NewHandler(observe(log, mux), "http.server",
 		// Health checks são chamados o tempo todo e não interessam como trace/métrica.
-		otelhttp.WithFilter(func(r *http.Request) bool { return !isHealth(r) }),
+		// Streams SSE duram minutos: um span por conexão e a duração no histograma de
+		// latência só atrapalhariam (há a métrica ticketmaster.sse.subscribers).
+		otelhttp.WithFilter(func(r *http.Request) bool { return !isHealth(r) && !isStream(r) }),
 	)
 }
 
@@ -116,6 +123,75 @@ func (h *handler) getEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, ev)
+}
+
+// GET /api/events/{idOrSlug}/stream — Server-Sent Events com o mapa de assentos.
+//
+// Cada mensagem é `event: seats` + `data: {"seats":[...]}` com o mapa COMPLETO
+// (snapshot, não diff): o cliente só substitui o que tem. A primeira mensagem
+// chega logo após conectar; as seguintes, a cada mudança (NOTIFY do Postgres ou
+// vencimento de hold). Um comentário `: ping` a cada 20 s mantém proxies sem
+// fechar a conexão ociosa. Se a conexão cair, o EventSource do navegador
+// reconecta sozinho (após `retry` ms) e recebe um snapshot novo.
+func (h *handler) eventStream(w http.ResponseWriter, r *http.Request) {
+	key := r.PathValue("idOrSlug")
+	id, _ := strconv.ParseInt(key, 10, 64) // mesmo esquema do getEvent
+	ev, err := h.st.GetEvent(r.Context(), key, id)
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "evento não encontrado")
+		return
+	}
+	if err != nil {
+		h.internalError(w, r, err)
+		return
+	}
+
+	// ResponseController acha o Flush do writer original através dos wrappers
+	// (por isso statusRecorder implementa Unwrap).
+	rc := http.NewResponseController(w)
+	hd := w.Header()
+	hd.Set("Content-Type", "text/event-stream")
+	hd.Set("Cache-Control", "no-cache")
+	hd.Set("X-Accel-Buffering", "no") // nginx: não bufferizar o stream
+	w.WriteHeader(http.StatusOK)
+	if _, err := io.WriteString(w, "retry: 3000\n\n"); err != nil {
+		return
+	}
+	if err := rc.Flush(); err != nil {
+		h.log.ErrorContext(r.Context(), "SSE sem suporte a flush", "erro", err)
+		return
+	}
+
+	sub := h.hub.Subscribe(ev.ID)
+	defer h.hub.Unsubscribe(sub)
+	ping := time.NewTicker(20 * time.Second)
+	defer ping.Stop()
+
+	for {
+		select {
+		case <-r.Context().Done(): // navegador fechou a aba / navegou
+			return
+		case seats, ok := <-sub.C:
+			if !ok { // hub fechado: servidor desligando
+				return
+			}
+			data, err := json.Marshal(map[string]any{"seats": seats})
+			if err != nil {
+				h.log.ErrorContext(r.Context(), "SSE: falha ao serializar assentos", "erro", err)
+				return
+			}
+			if _, err := fmt.Fprintf(w, "event: seats\ndata: %s\n\n", data); err != nil {
+				return
+			}
+		case <-ping.C:
+			if _, err := io.WriteString(w, ": ping\n\n"); err != nil {
+				return
+			}
+		}
+		if err := rc.Flush(); err != nil {
+			return
+		}
+	}
 }
 
 // reserveRequest é o corpo esperado em POST /api/reserve.
@@ -350,6 +426,10 @@ func (s *statusRecorder) WriteHeader(code int) {
 	s.ResponseWriter.WriteHeader(code)
 }
 
+// Unwrap permite ao http.ResponseController alcançar o writer original (e o
+// Flush dele). Sem isso o SSE não conseguiria enviar as mensagens na hora.
+func (s *statusRecorder) Unwrap() http.ResponseWriter { return s.ResponseWriter }
+
 // observe é o middleware de log de acesso. Fica DENTRO do otelhttp para:
 //   - logar com o context da requisição (que tem o span => trace_id no log);
 //   - depois que o ServeMux escolheu a rota, ler r.Pattern (ex.: "GET /api/events/{idOrSlug}")
@@ -388,3 +468,5 @@ func observe(log *slog.Logger, next http.Handler) http.Handler {
 }
 
 func isHealth(r *http.Request) bool { return strings.HasPrefix(r.URL.Path, "/api/health") }
+
+func isStream(r *http.Request) bool { return strings.HasSuffix(r.URL.Path, "/stream") }
