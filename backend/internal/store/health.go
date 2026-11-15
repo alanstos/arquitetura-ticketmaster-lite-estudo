@@ -9,7 +9,7 @@ import (
 // Estados de saúde (de um componente e do sistema como um todo).
 const (
 	HealthOK       = "ok"
-	HealthDegraded = "degraded" // funciona, mas sem uma dependência opcional (Redis)
+	HealthDegraded = "degraded" // funciona, mas sem uma dependência opcional (Redis/Elasticsearch)
 	HealthDown     = "down"     // não consegue atender (Postgres fora)
 	HealthDisabled = "disabled" // dependência desligada por configuração
 )
@@ -29,7 +29,7 @@ type HealthReport struct {
 	Checks map[string]ComponentHealth `json:"checks"`
 }
 
-// pinger é implementado pelo seat gate do Redis (holds.Gate). Interface à parte
+// pinger é implementado pelo seat gate do Redis (holds.Gate) e pelo search.Client. Interface à parte
 // para não obrigar todo SeatGate a saber se pingar.
 type pinger interface {
 	Ping(ctx context.Context) error
@@ -39,8 +39,9 @@ type pinger interface {
 //
 //   - Postgres é a fonte da verdade: fora do ar => "down".
 //   - Redis é opcional (ADR-010): fora do ar => "degraded"; reservas seguem só com o Postgres.
+//   - Elasticsearch é opcional (ADR-013): fora do ar => "degraded"; busca cai para o ILIKE do Postgres.
 func (s *Store) Health(ctx context.Context) HealthReport {
-	var pg, rd ComponentHealth
+	var pg, rd, es ComponentHealth
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() { defer wg.Done(); pg = check(ctx, s.pool.Ping) }()
@@ -51,16 +52,22 @@ func (s *Store) Health(ctx context.Context) HealthReport {
 	} else {
 		rd = ComponentHealth{Status: HealthDisabled}
 	}
+	if p, ok := s.searcher.(pinger); ok {
+		wg.Add(1)
+		go func() { defer wg.Done(); es = check(ctx, p.Ping) }()
+	} else {
+		es = ComponentHealth{Status: HealthDisabled}
+	}
 	wg.Wait()
 
 	status := HealthOK
 	switch {
 	case pg.Status != HealthOK:
 		status = HealthDown
-	case rd.Status == HealthDown:
+	case rd.Status == HealthDown, es.Status == HealthDown:
 		status = HealthDegraded
 	}
-	return HealthReport{Status: status, Checks: map[string]ComponentHealth{"postgres": pg, "redis": rd}}
+	return HealthReport{Status: status, Checks: map[string]ComponentHealth{"postgres": pg, "redis": rd, "elasticsearch": es}}
 }
 
 func check(ctx context.Context, ping func(context.Context) error) ComponentHealth {

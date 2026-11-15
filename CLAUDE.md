@@ -16,6 +16,8 @@ sem venda duplicada do mesmo assento.
 - `frontend/` — React 18 + Vite + TypeScript + react-router-dom 6. Dev server com proxy `/api` → backend.
 - Postgres 16 (extensão `unaccent` para busca sem acento) — fonte da verdade dos assentos.
 - Redis 7 (opcional, `REDIS_URL`): só filtro rápido de holds na frente do Postgres (ADR-010), nunca fonte da verdade.
+- Elasticsearch 8 (opcional, `ES_URL`): índice de busca aproximada (ADR-013), alimentado por outbox
+  transacional (`search_outbox`); nunca fonte da verdade, fallback para `ILIKE` no Postgres.
 - Observabilidade (ADR-011): OpenTelemetry (OTLP/HTTP, `OTEL_EXPORTER_OTLP_ENDPOINT`; vazio desliga) →
   container `grafana/otel-lgtm` (Grafana + Prometheus + Tempo + Loki). Versões OTel fixadas para Go 1.23.
 
@@ -29,9 +31,12 @@ make loadtest      # 50 reservas simultâneas no mesmo assento -> espera 1x201 e
 make go-check      # gofmt + go vet + go build dentro de um container golang
 make fe-check      # tsc + vite build dentro de um container node
 make obs           # mostra as URLs do Grafana / dashboard
+make es-reindex    # reenfileira todos os eventos no outbox -> Elasticsearch
+make es-search q=casa  # testa a busca
 ```
 URLs: http://localhost:5173 (web), http://localhost:5173/event/jota-quest-rio-de-janeiro, http://localhost:5173/admin, http://localhost:8080/api/events,
-http://localhost:8080/api/health/ready, http://localhost:3000/d/ticketmaster-lite (Grafana)
+http://localhost:8080/api/health/ready, http://localhost:3000/d/ticketmaster-lite (Grafana),
+http://localhost:9200/events/_count (Elasticsearch)
 
 ## Estrutura
 ```
@@ -41,6 +46,7 @@ backend/
   internal/api/       handlers HTTP + validação + mapeamento de erros -> status
   internal/store/     queries SQL e regras de reserva/confirmação (concorrência mora aqui)
   internal/holds/     seat gate em Redis (implementa store.SeatGate; Lua, timeout, circuit breaker)
+  internal/search/    busca com Elasticsearch (store.Searcher): cliente REST, mapping, query fuzzy, indexer do outbox
   internal/live/      mapa de assentos em tempo real: LISTEN/NOTIFY do Postgres -> hub -> SSE (ADR-012)
   internal/db/        conexão, runner de migrations (embed), seed.sql
   internal/telemetry/ setup do OpenTelemetry (traces/métricas/logs OTLP) + logger slog com trace_id

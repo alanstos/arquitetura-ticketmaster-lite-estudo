@@ -5,7 +5,8 @@ INSERT INTO venues (name, city, address, seat_rows, seat_cols) VALUES
     ('Parque Ibirapuera',     'São Paulo',      'Av. Pedro Álvares Cabral - Vila Mariana',  3, 3),
     ('Teatro Renault',        'São Paulo',      'Av. Brigadeiro Luís Antônio, 411 - Bela Vista', 3, 3),
     ('Palácio das Artes',     'Belo Horizonte', 'Av. Afonso Pena, 1537 - Centro',           3, 3),
-    ('Teatro Guaíra',         'Curitiba',       'R. Conselheiro Laurindo, 175 - Centro',    3, 3);
+    ('Teatro Guaíra',         'Curitiba',       'R. Conselheiro Laurindo, 175 - Centro',    3, 3),
+    ('Casarão Cultural',      'Olinda',         'R. do Amparo, 120 - Carmo',                3, 3);
 
 INSERT INTO events (slug, name, description, venue_id, starts_at, price_cents) VALUES
     ('jota-quest-rio-de-janeiro', 'Jota Quest', 'Turnê com os grandes sucessos da banda.',
@@ -19,7 +20,14 @@ INSERT INTO events (slug, name, description, venue_id, starts_at, price_cents) V
     ('orquestra-sinfonica-curitiba-2027', 'Orquestra Sinfônica', 'Concerto de abertura da temporada 2027.',
         (SELECT id FROM venues WHERE name = 'Teatro Guaíra'), '2027-03-10 20:00:00-03', 12000),
     ('festival-de-jazz-rio-de-janeiro-2027', 'Festival de Jazz', 'Encontro de músicos de jazz nacionais e internacionais.',
-        (SELECT id FROM venues WHERE name = 'Qualistage'), '2027-04-18 18:00:00-03', 15000);
+        (SELECT id FROM venues WHERE name = 'Qualistage'), '2027-04-18 18:00:00-03', 15000),
+    -- Eventos para testar a busca aproximada (ADR-013): "casa" deve achar os três.
+    ('roda-de-samba-na-casa-olinda-2027', 'Roda de Samba na Casa', 'Samba de roda com convidados no quintal.',
+        (SELECT id FROM venues WHERE name = 'Casarão Cultural'), '2027-05-08 17:00:00-03', 5000),
+    ('a-casinha-encantada-curitiba-2027', 'A Casinha Encantada', 'Teatro infantil de bonecos.',
+        (SELECT id FROM venues WHERE name = 'Teatro Guaíra'), '2027-05-22 15:00:00-03', 4000),
+    ('casas-de-fado-sao-paulo-2027', 'Casas de Fado', 'Noite de fado português com guitarra e viola.',
+        (SELECT id FROM venues WHERE name = 'Teatro Renault'), '2027-06-12 21:00:00-03', 11000);
 
 -- Gera os assentos (tickets) de cada evento a partir da matriz do venue (A1..C3).
 INSERT INTO tickets (event_id, seat_row, seat_number, status)

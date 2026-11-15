@@ -123,3 +123,35 @@ Formato: contexto → decisão → consequências. Adicione novas no final, nume
     do `otelhttp`, com gauge próprio.
   - Em escala, um snapshot por evento por mudança poderia virar gargalo; o worker já coalesce rajadas, e um
     debounce curto ou cache (ver roadmap) seriam os próximos passos.
+
+
+## ADR-013 — Busca aproximada com Elasticsearch, alimentado por outbox transacional
+- **Contexto**: a busca era `unaccent(evento || local || cidade) ILIKE '%kw%'`: sempre *seq scan* (expressão
+  sobre JOIN + `%` à esquerda) e sem tolerância a erro de digitação nem variações ("casa" → casinha).
+- **Decisão**:
+  1. **Elasticsearch** (nó único, sem segurança, só local) como índice de busca: analyzer português
+     (stemmer leve + sem acento), edge n-grams para prefixo e `fuzziness: AUTO` para erro de digitação.
+  2. **Postgres continua a fonte da verdade**: o ES devolve só IDs ordenados; os dados vêm do Postgres
+     (assentos livres sempre atuais, filtros de data reaplicados).
+  3. **Outbox transacional** (`search_outbox`, migration 003) preenchido por triggers + `NOTIFY`; um indexer
+     no backend consome em lotes (`SKIP LOCKED`) e envia `_bulk`. Sem *dual write* na aplicação.
+  4. **Opcional e degradável**, como o Redis (ADR-010): `ES_URL` vazio desliga; erro/timeout (500 ms) abre
+     um circuit breaker de 5 s e a busca cai para o `ILIKE`.
+  5. Cliente **REST puro** (`net/http`), sem biblioteca: chamadas explícitas e sem conflito de versões no Go 1.23.
+- **Alternativas**:
+  - **`pg_trgm` + full-text no Postgres**: sem componente novo, transacional e usa índice GIN; suficiente para
+    milhares/milhões de eventos. Preterido só porque o objetivo aqui é estudar um motor de busca dedicado;
+    numa decisão de produto com esse volume, seria a primeira opção.
+  - **Meilisearch/Typesense**: tolerância a erro pronta e bem mais leves; menos controle de analyzers/score
+    e menos comum no mercado que ES/OpenSearch.
+  - **OpenSearch**: equivalente (fork do ES 7.10); a API usada aqui funciona nos dois.
+  - **Dual write** (gravar no ES logo após o commit): mais simples, mas se o processo cair entre o commit e a
+    chamada ao ES o índice fica divergente para sempre. **CDC** (Debezium + Kafka): robusto, mas pesado demais.
+- **Consequências**:
+  - Consistência eventual (~1 s) só na seleção dos resultados; os dados exibidos são sempre os do Postgres.
+  - +~1 GB de RAM (JVM com heap de 512 MB) e mais um volume (`esdata`). Apagar o volume é seguro: o índice é
+    recriado e reindexado a partir do Postgres na próxima subida.
+  - Com keyword, a ordem passa a ser por relevância (não mais por data) e limitada a 50 resultados.
+  - Também busca na descrição (o `ILIKE` não buscava); o fallback continua sem descrição e sem tolerância a erro.
+  - Pequeno custo nas escritas de `events`/`venues` (uma linha no outbox por evento afetado).
+

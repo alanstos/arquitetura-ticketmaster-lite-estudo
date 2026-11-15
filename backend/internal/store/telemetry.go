@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"time"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -18,9 +19,11 @@ import (
 var tracer = otel.Tracer("ticketmaster-lite/store")
 
 type instruments struct {
-	reservations metric.Int64Counter // atributo result
-	gateFallback metric.Int64Counter // atributo reason
-	bookings     metric.Int64Counter // atributo result
+	reservations   metric.Int64Counter     // atributo result
+	gateFallback   metric.Int64Counter     // atributo reason
+	bookings       metric.Int64Counter     // atributo result
+	searches       metric.Float64Histogram // atributo backend (ADR-013)
+	searchFallback metric.Int64Counter     // atributo reason
 }
 
 func newInstruments() instruments {
@@ -33,7 +36,12 @@ func newInstruments() instruments {
 		metric.WithDescription("Reservas que seguiram só com o Postgres porque o seat gate (Redis) falhou ou estava em pausa"))
 	b, _ := m.Int64Counter("ticketmaster.bookings",
 		metric.WithDescription("Confirmações de booking por resultado: confirmed, expired, not_found, error"))
-	return instruments{reservations: r, gateFallback: f, bookings: b}
+	sd, _ := m.Float64Histogram("ticketmaster.search.duration",
+		metric.WithUnit("ms"), // buckets padrão do OTel (0, 5, 10, 25...) são pensados para ms
+		metric.WithDescription("Duração das buscas de eventos por backend: elasticsearch, postgres (sem palavra-chave/índice desligado) ou postgres_fallback (índice falhou)"))
+	sf, _ := m.Int64Counter("ticketmaster.search.fallback",
+		metric.WithDescription("Buscas por palavra-chave que caíram para o Postgres porque o índice (Elasticsearch) falhou ou estava em pausa"))
+	return instruments{reservations: r, gateFallback: f, bookings: b, searches: sd, searchFallback: sf}
 }
 
 // Resultados de reserva (valores do atributo "result").
@@ -89,4 +97,22 @@ func endSpan(span trace.Span, result string, err error) {
 func (s *Store) countFallback(ctx context.Context, reason string) {
 	s.m.gateFallback.Add(ctx, 1, metric.WithAttributes(attribute.String("reason", reason)))
 	trace.SpanFromContext(ctx).AddEvent("seat_gate.fallback", trace.WithAttributes(attribute.String("reason", reason)))
+}
+
+// Backends de busca (valores do atributo "backend").
+const (
+	searchBackendIndex    = "elasticsearch"
+	searchBackendPostgres = "postgres"
+	searchBackendFallback = "postgres_fallback"
+)
+
+func (s *Store) recordSearch(ctx context.Context, backend string, start time.Time) {
+	s.m.searches.Record(ctx, float64(time.Since(start).Microseconds())/1000,
+		metric.WithAttributes(attribute.String("backend", backend)))
+	trace.SpanFromContext(ctx).SetAttributes(attribute.String("search.backend", backend))
+}
+
+func (s *Store) countSearchFallback(ctx context.Context, reason string) {
+	s.m.searchFallback.Add(ctx, 1, metric.WithAttributes(attribute.String("reason", reason)))
+	trace.SpanFromContext(ctx).AddEvent("search.fallback", trace.WithAttributes(attribute.String("reason", reason)))
 }

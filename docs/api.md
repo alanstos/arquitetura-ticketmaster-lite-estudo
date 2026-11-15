@@ -6,7 +6,7 @@ Erros: `{"error": "mensagem"}`.
 | Método | Rota | Descrição |
 |---|---|---|
 | GET | `/api/health/live` | liveness: processo respondendo (não olha dependências) |
-| GET | `/api/health/ready` | readiness: pinga Postgres e Redis (ver abaixo). `/api/health` é alias |
+| GET | `/api/health/ready` | readiness: pinga Postgres, Redis e Elasticsearch (ver abaixo). `/api/health` é alias |
 | GET | `/api/events` | eventos futuros, ordenados por data |
 | GET | `/api/events/{idOrSlug}` | detalhe + assentos (aceita slug ou id numérico) |
 | GET | `/api/events/{idOrSlug}/stream` | **SSE**: mapa de assentos em tempo real (ver abaixo) |
@@ -57,12 +57,23 @@ data: {"seats":[{"ticket_id":1,"row":"A","number":1,"label":"A1","status":"RESER
 ## GET /api/search
 | Param | Formato | Observação |
 |---|---|---|
-| `keyword` | texto | casa com nome do evento, nome do local ou cidade; ignora acento e caixa |
+| `keyword` | texto | busca no nome do evento, descrição, nome do local e cidade; ignora acento e caixa; tolera erro de digitação e acha por prefixo/radical (ver abaixo) |
 | `startDate` | `YYYY-MM-DD` | inclusivo, fuso America/Sao_Paulo |
 | `endDate` | `YYYY-MM-DD` | inclusivo |
 
 Todos opcionais. 400 se data inválida ou `endDate < startDate`. Exemplo:
 `/api/search?keyword=rio&startDate=2026-12-01&endDate=2027-12-31`
+
+**Com `keyword` e Elasticsearch ligado (ADR-013)** — busca aproximada:
+- todas as palavras digitadas precisam casar (em qualquer campo): `jazz rio` acha "Festival de Jazz" no Qualistage (RJ);
+- erro de digitação (1 letra até 5 letras, 2 a partir de 6): `jota qest`, `orqestra`, `caza`;
+- prefixo e radical: `casa` acha "Casas de Fado", "Roda de Samba na Casa", "A Casinha Encantada" e o que for no "Casarão Cultural" (seed); `teatr` acha eventos em "Teatro ...";
+- a 1ª letra precisa estar certa (`kasa` não acha "casa");
+- **ordem por relevância** (nome pesa mais que local/cidade, que pesam mais que descrição); empate → data;
+- no máximo 50 resultados.
+
+Sem `keyword`, com `ES_URL` vazio ou com o Elasticsearch fora do ar: busca no Postgres (`ILIKE` sem acento em
+nome do evento + local + cidade, sem tolerância a erro), ordenada por data. O formato da resposta é o mesmo.
 
 ## POST /api/reserve
 ```json
@@ -133,10 +144,11 @@ curl "localhost:8080/api/admin/tickets?venueId=1&startDate=2026-12-01"
 ```json
 {"status":"degraded","checks":{
   "postgres":{"status":"ok","latency_ms":1},
-  "redis":{"status":"down","latency_ms":502,"error":"dial tcp: lookup redis: i/o timeout"}}}
+  "redis":{"status":"down","latency_ms":502,"error":"dial tcp: lookup redis: i/o timeout"},
+  "elasticsearch":{"status":"ok","latency_ms":11}}}
 ```
 | `status` | HTTP | Quando |
 |---|---|---|
-| `ok` | 200 | Postgres e Redis respondendo (ou Redis `disabled`, com `REDIS_URL` vazio) |
-| `degraded` | 200 | Redis fora: reservas seguem só com o Postgres (ADR-010) |
+| `ok` | 200 | Postgres, Redis e Elasticsearch respondendo (ou `disabled`, com `REDIS_URL`/`ES_URL` vazio) |
+| `degraded` | 200 | Redis fora: reservas seguem só com o Postgres (ADR-010); Elasticsearch fora: busca cai para o `ILIKE` (ADR-013) |
 | `down` | 503 | Postgres fora (ou ping > 1 s): não dá para atender |

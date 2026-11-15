@@ -14,6 +14,7 @@ import (
 	"ticketmaster-lite/backend/internal/db"
 	"ticketmaster-lite/backend/internal/holds"
 	"ticketmaster-lite/backend/internal/live"
+	"ticketmaster-lite/backend/internal/search"
 	"ticketmaster-lite/backend/internal/store"
 	"ticketmaster-lite/backend/internal/telemetry"
 )
@@ -91,6 +92,18 @@ func main() {
 		log.Info("seat gate (Redis) ligado")
 	} else {
 		log.Info("seat gate desligado (REDIS_URL vazio): só Postgres")
+	}
+
+	// Elasticsearch é opcional (ADR-013): ES_URL vazio => busca ILIKE no Postgres.
+	// O indexer cria o índice e consome o search_outbox em segundo plano; se o ES
+	// ainda não subiu, ele tenta de novo sozinho e a busca usa o fallback.
+	if esURL := os.Getenv("ES_URL"); esURL != "" {
+		es := search.New(esURL)
+		go search.NewIndexer(es, pool, databaseURL, log).Run(ctx)
+		opts = append(opts, store.WithSearcher(es))
+		log.Info("busca com Elasticsearch ligada", "url", esURL)
+	} else {
+		log.Info("busca com Elasticsearch desligada (ES_URL vazio): ILIKE no Postgres")
 	}
 
 	st := store.New(pool, ttl, opts...)

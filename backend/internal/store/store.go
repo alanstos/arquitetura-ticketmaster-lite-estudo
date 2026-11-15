@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"sort"
 	"strconv"
 	"time"
 
@@ -21,6 +22,7 @@ type Store struct {
 	pool           *pgxpool.Pool
 	reservationTTL time.Duration
 	gate           SeatGate // opcional (nil = só Postgres)
+	searcher       Searcher // opcional (nil = busca ILIKE no Postgres)
 	log            *slog.Logger
 	m              instruments // métricas de negócio (telemetry.go)
 }
@@ -44,11 +46,24 @@ type GateHold struct {
 	Release   func(ctx context.Context) error // desfaz o hold (só as chaves deste cliente)
 }
 
+// Searcher é o índice de busca textual (implementação em internal/search, com
+// Elasticsearch). Devolve só IDs em ordem de relevância; os dados vêm do Postgres.
+type Searcher interface {
+	SearchEventIDs(ctx context.Context, f SearchFilter) ([]int64, error)
+}
+
+// ErrSearchUnavailable: o índice de busca está em pausa (circuit breaker aberto
+// após falha) e a busca deve seguir com o Postgres.
+var ErrSearchUnavailable = errors.New("índice de busca em pausa (circuit breaker aberto)")
+
 // Option configura o Store.
 type Option func(*Store)
 
 // WithSeatGate liga o filtro de assentos (ex.: Redis) na frente do Postgres.
 func WithSeatGate(g SeatGate) Option { return func(s *Store) { s.gate = g } }
+
+// WithSearcher liga o índice de busca (ex.: Elasticsearch) para buscas por palavra-chave.
+func WithSearcher(se Searcher) Option { return func(s *Store) { s.searcher = se } }
 
 // WithLogger define o logger usado para avisos (ex.: gate indisponível).
 func WithLogger(l *slog.Logger) Option { return func(s *Store) { s.log = l } }
@@ -78,15 +93,75 @@ func scanEventSummary(row pgx.Row, e *EventSummary) error {
 		&e.AvailableSeats, &e.TotalSeats)
 }
 
-// SearchEvents lista eventos futuros, filtrando por palavra-chave (nome do evento,
-// local ou cidade, sem diferenciar acentos/maiúsculas) e intervalo de datas.
-func (s *Store) SearchEvents(ctx context.Context, f SearchFilter) ([]EventSummary, error) {
-	rows, err := s.pool.Query(ctx, eventSummarySelect+`
+// Filtros comuns às buscas: só eventos futuros e intervalo de datas ($1, $2)
+// no fuso de São Paulo. A condição extra usa $3.
+const searchWhere = `
 WHERE e.starts_at >= now()
-  AND ($1::text = '' OR unaccent(e.name || ' ' || v.name || ' ' || v.city) ILIKE '%' || unaccent($1::text) || '%')
-  AND ($2::date IS NULL OR (e.starts_at AT TIME ZONE 'America/Sao_Paulo')::date >= $2::date)
-  AND ($3::date IS NULL OR (e.starts_at AT TIME ZONE 'America/Sao_Paulo')::date <= $3::date)
-ORDER BY e.starts_at`, f.Keyword, f.StartDate, f.EndDate)
+  AND ($1::date IS NULL OR (e.starts_at AT TIME ZONE 'America/Sao_Paulo')::date >= $1::date)
+  AND ($2::date IS NULL OR (e.starts_at AT TIME ZONE 'America/Sao_Paulo')::date <= $2::date)
+  AND `
+
+// SearchEvents lista eventos futuros, filtrando por palavra-chave e intervalo de datas.
+//
+// Com palavra-chave e índice de busca ligado (ADR-013): o Elasticsearch decide
+// QUAIS eventos e em que ORDEM (relevância, tolerante a erro de digitação) e o
+// Postgres devolve os dados atuais deles. Se o índice falhar, ou sem palavra-chave,
+// a busca é feita só no Postgres (ILIKE sem acento, ordenada por data).
+func (s *Store) SearchEvents(ctx context.Context, f SearchFilter) ([]EventSummary, error) {
+	start := time.Now()
+	backend := searchBackendPostgres
+	if f.Keyword != "" && s.searcher != nil {
+		events, err := s.searchViaIndex(ctx, f)
+		if err == nil {
+			s.recordSearch(ctx, searchBackendIndex, start)
+			return events, nil
+		}
+		if ctx.Err() != nil {
+			return nil, ctx.Err() // cliente desistiu: não adianta tentar o fallback
+		}
+		reason := "error"
+		if errors.Is(err, ErrSearchUnavailable) {
+			reason = "breaker_open"
+		} else {
+			s.log.WarnContext(ctx, "índice de busca falhou; usando o Postgres", "erro", err)
+		}
+		s.countSearchFallback(ctx, reason)
+		backend = searchBackendFallback
+	}
+	events, err := s.queryEvents(ctx, f,
+		`($3::text = '' OR unaccent(e.name || ' ' || v.name || ' ' || v.city) ILIKE '%' || unaccent($3::text) || '%')
+ORDER BY e.starts_at`, f.Keyword)
+	if err == nil {
+		s.recordSearch(ctx, backend, start)
+	}
+	return events, err
+}
+
+func (s *Store) searchViaIndex(ctx context.Context, f SearchFilter) ([]EventSummary, error) {
+	ids, err := s.searcher.SearchEventIDs(ctx, f)
+	if err != nil {
+		return nil, err
+	}
+	if len(ids) == 0 {
+		return []EventSummary{}, nil
+	}
+	// Os filtros de data são reaplicados aqui: o Postgres tem a palavra final
+	// (o índice pode estar alguns instantes atrasado em relação ao banco).
+	events, err := s.queryEvents(ctx, f, `e.id = ANY($3::bigint[])`, ids)
+	if err != nil {
+		return nil, err
+	}
+	rank := make(map[int64]int, len(ids))
+	for i, id := range ids {
+		rank[id] = i
+	}
+	sort.SliceStable(events, func(i, j int) bool { return rank[events[i].ID] < rank[events[j].ID] })
+	return events, nil
+}
+
+// queryEvents roda eventSummarySelect + searchWhere + cond (que usa $3 = arg).
+func (s *Store) queryEvents(ctx context.Context, f SearchFilter, cond string, arg any) ([]EventSummary, error) {
+	rows, err := s.pool.Query(ctx, eventSummarySelect+searchWhere+cond, f.StartDate, f.EndDate, arg)
 	if err != nil {
 		return nil, err
 	}
