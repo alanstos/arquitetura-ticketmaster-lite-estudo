@@ -16,6 +16,8 @@ sem venda duplicada do mesmo assento.
 - `frontend/` — React 18 + Vite + TypeScript + react-router-dom 6. Dev server com proxy `/api` → backend.
 - Postgres 16 (extensão `unaccent` para busca sem acento) — fonte da verdade dos assentos.
 - Redis 7 (opcional, `REDIS_URL`): só filtro rápido de holds na frente do Postgres (ADR-010), nunca fonte da verdade.
+- Observabilidade (ADR-011): OpenTelemetry (OTLP/HTTP, `OTEL_EXPORTER_OTLP_ENDPOINT`; vazio desliga) →
+  container `grafana/otel-lgtm` (Grafana + Prometheus + Tempo + Loki). Versões OTel fixadas para Go 1.23.
 
 ## Comandos
 `make` pode não estar instalado no WSL (`sudo apt install make`); os alvos são só atalhos para `docker compose`.
@@ -26,8 +28,10 @@ make reset         # apaga o volume do banco e sobe de novo (re-seed)
 make loadtest      # 50 reservas simultâneas no mesmo assento -> espera 1x201 e 49x409
 make go-check      # gofmt + go vet + go build dentro de um container golang
 make fe-check      # tsc + vite build dentro de um container node
+make obs           # mostra as URLs do Grafana / dashboard
 ```
-URLs: http://localhost:5173 (web), http://localhost:5173/event/jota-quest-rio-de-janeiro, http://localhost:5173/admin, http://localhost:8080/api/events
+URLs: http://localhost:5173 (web), http://localhost:5173/event/jota-quest-rio-de-janeiro, http://localhost:5173/admin, http://localhost:8080/api/events,
+http://localhost:8080/api/health/ready, http://localhost:3000/d/ticketmaster-lite (Grafana)
 
 ## Estrutura
 ```
@@ -38,12 +42,14 @@ backend/
   internal/store/     queries SQL e regras de reserva/confirmação (concorrência mora aqui)
   internal/holds/     seat gate em Redis (implementa store.SeatGate; Lua, timeout, circuit breaker)
   internal/db/        conexão, runner de migrations (embed), seed.sql
+  internal/telemetry/ setup do OpenTelemetry (traces/métricas/logs OTLP) + logger slog com trace_id
 frontend/src/
   api.ts              tipos + cliente HTTP
   pages/HomePage.tsx  lista + busca (filtros na query string)
   pages/EventPage.tsx detalhe, mapa de assentos, reserva, countdown, confirmação
   pages/AdminPage.tsx relatório de ingressos (filtros local/data/status, botão atualizar)
   components/SeatMap.tsx
+observability/        provisioning + dashboard JSON do Grafana (montados no container lgtm)
 docs/                 arquitetura, API, decisões (ADRs), roadmap
 ```
 

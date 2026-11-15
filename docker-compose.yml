@@ -28,6 +28,19 @@ services:
       timeout: 3s
       retries: 30
 
+  # Observabilidade (ADR-011): OTel Collector + Prometheus (métricas) + Tempo (traces)
+  # + Loki (logs) + Grafana num só container, para estudo. Grafana: http://localhost:3000
+  lgtm:
+    image: grafana/otel-lgtm:0.38.1
+    ports:
+      - "3000:3000"   # Grafana (login anônimo como admin já habilitado na imagem)
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP (usado pelo backend)
+    volumes:
+      - ./observability/grafana/provisioning/ticketmaster.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/ticketmaster.yaml:ro
+      - ./observability/grafana/dashboards:/otel-lgtm/ticketmaster-dashboards:ro
+      - lgtmdata:/data   # métricas/traces/logs sobrevivem a "docker compose down"
+
   backend:
     build: ./backend
     environment:
@@ -37,6 +50,10 @@ services:
       SEED_ON_START: "true"
       # Seat gate em Redis (ADR-010). Deixe vazio para comparar com "só Postgres".
       REDIS_URL: ${REDIS_URL-redis://redis:6379/0}
+      # OpenTelemetry (ADR-011). Vazio desliga a telemetria (só logs JSON no stdout).
+      # Para mandar ao Datadog: apontar para um Datadog Agent com OTLP habilitado.
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT-http://lgtm:4318}
+      OTEL_SERVICE_NAME: ticketmaster-api
     ports:
       - "8080:8080"
     depends_on:
@@ -44,6 +61,14 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      lgtm:
+        condition: service_started   # exporter tenta de novo sozinho se o coletor ainda não subiu
+    healthcheck:
+      # Liveness (não depende de Postgres/Redis). wget vem do busybox do alpine.
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/health/live"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
 
   frontend:
     build: ./frontend
@@ -59,3 +84,4 @@ services:
 
 volumes:
   pgdata:
+  lgtmdata:

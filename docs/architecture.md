@@ -7,6 +7,9 @@
               React SPA                          proxy    net/http + pgx    │    fonte da verdade
                                                                             └──► Redis 7 (:6379)
                                                                                  seat gate (opcional)
+                                                     │
+                                                     └── OTLP/HTTP ──► grafana/otel-lgtm (:3000 Grafana, :4318 OTLP)
+                                                         traces, métricas, logs   Collector → Tempo / Prometheus / Loki
 ```
 
 Tudo sobe com `docker compose`. O frontend nunca fala direto com o backend pelo host: o Vite faz proxy de
@@ -129,6 +132,38 @@ inclusivo. Só eventos futuros (`starts_at >= now()`) são listados.
   - **Sem polling**: recarrega só ao mudar filtros ou clicar em "Atualizar" (ícone gira durante a carga).
   - Leitura pura, sem lock: usa a mesma regra de expiração preguiçosa (`freeSeatSQL`), então bate com o mapa.
 
+## Observabilidade (ADR-011)
+
+Instrumentação com **OpenTelemetry** (padrão aberto) e visualização local no container `grafana/otel-lgtm`.
+O backend só conhece OTLP: trocar de ferramenta (Datadog, Honeycomb, Grafana Cloud…) é trocar o endpoint.
+
+```
+backend Go ──OTLP/HTTP :4318──► OTel Collector ─┬─► Tempo       (traces)   ┐
+  otelhttp, otelpgx, redisotel,                 ├─► Prometheus  (métricas) ├─► Grafana :3000
+  spans/métricas do store, slog→OTLP            └─► Loki        (logs)     ┘
+  └─ stdout: logs JSON com trace_id (docker compose logs)
+```
+
+| Pilar | De onde vem | Onde ver |
+|---|---|---|
+| **Traces** | `otelhttp` (span por requisição, nomeado pela rota, ex.: `POST /api/reserve`) → span `store.Reserve`/`store.ConfirmBooking` → spans do Redis (`evalsha` do script Lua) e do pgx (cada query, `pool.acquire`) | Grafana → Explore → Tempo |
+| **Métricas** | HTTP (`http_server_duration_milliseconds` por `http_route`/status), pool do pgx (`pgxpool_*`, `db_client_*`), Redis, e de negócio: `ticketmaster_reservations_total{result}`, `ticketmaster_seat_gate_fallback_total{reason}`, `ticketmaster_bookings_total{result}` | Dashboard **Ticketmaster Lite** |
+| **Logs** | `slog` com fan-out: JSON no stdout + bridge `otelslog` → Loki. Logs com `*Context` levam `trace_id`/`span_id` | `make logs` ou Explore → Loki `{service_name="ticketmaster-api"}` |
+
+- **Resultado da reserva** (`result`): `created`, `gate_rejected` (Redis recusou sem tocar no banco),
+  `conflict` (Postgres recusou: ocupado/`SKIP LOCKED`), `invalid` (400), `error` (500). No `make loadtest` com
+  Redis ligado aparece 1 `created` + 49 `gate_rejected`; com `REDIS_URL=` vazio, 1 `created` + 49 `conflict`.
+- **Cardinalidade**: span e label `http_route` usam o padrão do `ServeMux` (`/api/events/{idOrSlug}`), nunca o
+  caminho real; requisições sem rota viram `unmatched`. Health checks não geram trace/métrica/log.
+- **Erros**: só `result=error` marca o span como erro; 409/410 são respostas de negócio.
+- **Shutdown**: SIGTERM → `http.Server.Shutdown` drena as requisições → flush dos exporters (sem isso, os
+  últimos spans se perdem).
+- **Health**: `GET /api/health/live` (liveness, usado pelo healthcheck do compose) e `GET /api/health/ready`
+  (readiness: pinga Postgres e Redis em paralelo, 1 s de timeout cada). Postgres fora → 503 `down`;
+  Redis fora → 200 `degraded` (é opcional, ADR-010).
+- Dashboard provisionado de `observability/grafana/dashboards/ticketmaster.json` (editável na UI; para
+  persistir, exporte o JSON e salve no arquivo).
+
 ## Configuração (env do backend)
 | Variável | Padrão | Uso |
 |---|---|---|
@@ -137,3 +172,5 @@ inclusivo. Só eventos futuros (`starts_at >= now()`) são listados.
 | `RESERVATION_TTL` | `5m` | duração do hold (formato Go: `30s`, `2m`) |
 | `SEED_ON_START` | `true` | popula dados mock se `events` vazia |
 | `REDIS_URL` | vazio (compose: `redis://redis:6379/0`) | liga o seat gate em Redis; vazio = só Postgres |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | vazio (compose: `http://lgtm:4318`) | liga a telemetria OTLP/HTTP; vazio = só logs JSON no stdout |
+| `OTEL_SERVICE_NAME` | `ticketmaster-api` | `service.name` nos traces/métricas/logs |

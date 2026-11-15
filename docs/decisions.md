@@ -70,3 +70,32 @@ Formato: contexto → decisão → consequências. Adicione novas no final, nume
   - `SKIP LOCKED` pode recusar um assento cuja transação concorrente acabou em rollback (409 "falso").
   - Chaves não são apagadas na confirmação/expiração: vencem pelo TTL junto com o hold do banco.
   - Mais um serviço no compose (Redis sem persistência: `--save "" --appendonly no`).
+
+## ADR-011 — Observabilidade com OpenTelemetry + Grafana LGTM local (em vez de Datadog)
+- **Contexto**: só havia log de acesso em texto no stdout e um `/api/health` que não olhava dependências.
+  Objetivo de estudo: ver os três pilares (logs, métricas, traces) — em especial o caminho de uma reserva
+  disputada (Redis → Postgres) — e checar a saúde do sistema.
+- **Decisão**:
+  1. Instrumentar com **OpenTelemetry** e exportar via **OTLP/HTTP** (`internal/telemetry`): `otelhttp` no
+     router, `otelpgx` no pool, `redisotel` no seat gate, spans/contadores de negócio no `store`, `slog`
+     com fan-out (JSON no stdout com `trace_id` + bridge `otelslog`).
+  2. Backend de observabilidade local: container **`grafana/otel-lgtm`** (Collector + Prometheus + Tempo +
+     Loki + Grafana) com dashboard provisionado.
+  3. Health dividido em **liveness** (`/api/health/live`) e **readiness** (`/api/health/ready`, com
+     `degraded` quando só o Redis cai).
+- **Alternativas**:
+  - **Datadog**: UI excelente e APM pronto, mas exige conta/API key, trial de 14 dias e depois é pago, e os
+    dados saem da máquina. Instrumentar com o SDK proprietário (`dd-trace-go`) prenderia o código ao fornecedor.
+    Com OTel, migrar é configuração: o Datadog Agent recebe OTLP (`OTEL_EXPORTER_OTLP_ENDPOINT=http://datadog-agent:4318`).
+  - **Prometheus scrape (`/metrics`) + promtail**: mais peças e não cobre traces; OTLP push unifica os três sinais.
+- **Consequências**:
+  - Mais um container (~1 GB de imagem, alguns centos de MB de RAM); dados em volume `lgtmdata`.
+  - `OTEL_EXPORTER_OTLP_ENDPOINT` vazio desliga tudo (providers no-op): o app não depende do coletor.
+  - Versões do OTel fixadas para Go 1.23 (`otel` v1.35, `otelhttp` v0.60). Esse `otelhttp` emite a convenção
+    HTTP **antiga** (`http.server.duration` em ms); a estável (`http.server.request.duration` em s) só via
+    `OTEL_SEMCONV_STABILITY_OPT_IN=http/dup` (duplicada). Ao subir o Go, atualizar e ajustar o dashboard.
+  - `otelpgx` grava o SQL nos spans (sem valores dos parâmetros). Logs de acesso não incluem dados pessoais,
+    mas o relatório `/admin` continua sem autenticação (ADR-009).
+  - `grafana/otel-lgtm` é para dev/estudo (sem HA, retenção curta); em produção cada componente seria separado
+    ou um SaaS.
+
