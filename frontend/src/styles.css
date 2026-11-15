@@ -95,3 +95,49 @@ label { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; col
 .legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 16px; font-size: 0.8rem; color: var(--muted); }
 .legend span { display: flex; align-items: center; gap: 6px; }
 .legend i { display: inline-block; width: 14px; height: 14px; min-height: 0; border-radius: 3px; }
+
+/* ---- topbar ---- */
+.topbar { display: flex; justify-content: space-between; align-items: center; }
+.topbar-link { color: #c9cde0; font-size: 0.95rem; }
+
+/* ---- relatório /admin ---- */
+.admin h1 { margin: 0 0 4px; }
+.admin-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+.admin-header p { margin: 0; }
+button.refresh { display: inline-flex; align-items: center; gap: 8px; }
+.icon.spin { animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+select {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.95rem;
+  background: #fff;
+  min-width: 220px;
+}
+
+.status-chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 16px; }
+.chip { background: #fff; color: var(--text); border: 1px solid var(--border); border-radius: 999px; padding: 6px 14px; font-size: 0.85rem; }
+.chip b { margin-left: 4px; }
+.chip.active { background: var(--text); color: #fff; border-color: var(--text); }
+.chip.sold.active { background: #5b6072; border-color: #5b6072; }
+.chip.reserved.active { background: var(--reserved); border-color: var(--reserved); }
+.chip.available.active { background: var(--free); border-color: var(--free); }
+.revenue { margin-left: auto; font-size: 0.9rem; color: var(--muted); }
+.revenue b { color: var(--text); }
+
+.table-wrap { overflow-x: auto; background: var(--card); border: 1px solid var(--border); border-radius: 10px; }
+.report { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+.report th, .report td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
+.report th { background: #fafbfd; color: var(--muted); font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em; position: sticky; top: 0; }
+.report tbody tr:last-child td { border-bottom: 0; }
+.report tbody tr:hover { background: #f8f9fc; }
+.report .num { text-align: right; }
+.nowrap { white-space: nowrap; }
+.small { font-size: 0.78rem; }
+
+.status-pill { border-radius: 999px; padding: 2px 10px; font-size: 0.78rem; font-weight: 600; white-space: nowrap; }
+.status-pill.sold { background: #eceef3; color: #4a4f60; }
+.status-pill.reserved { background: #fdf3dc; color: #8a5d00; }
+.status-pill.available { background: #e3f6ec; color: var(--free); }

@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/mail"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -41,6 +42,10 @@ func NewRouter(st *store.Store, log *slog.Logger) http.Handler {
 	mux.HandleFunc("POST /api/reserve", h.reserve)        // fase 1: segura os assentos (hold com TTL)
 	mux.HandleFunc("POST /api/booking", h.confirmBooking) // fase 2: confirma/paga a reserva
 	mux.HandleFunc("GET /api/booking/{id}", h.getBooking)
+	mux.HandleFunc("GET /api/venues", h.listVenues)
+	// Relatório administrativo. ATENÇÃO: sem autenticação (projeto de estudo) —
+	// expõe nome/e-mail dos compradores. Ver docs/decisions.md (ADR-009).
+	mux.HandleFunc("GET /api/admin/tickets", h.adminTickets)
 	return logging(log, mux)
 }
 
@@ -59,19 +64,8 @@ func (h *handler) listEvents(w http.ResponseWriter, r *http.Request) {
 func (h *handler) search(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	f := store.SearchFilter{Keyword: strings.TrimSpace(q.Get("keyword"))}
-	var err error
-	// As datas são validadas aqui para responder 400 com mensagem clara,
-	// em vez de deixar o Postgres falhar com erro de conversão (500).
-	if f.StartDate, err = parseDate(q.Get("startDate")); err != nil {
-		writeError(w, http.StatusBadRequest, "startDate inválido (use YYYY-MM-DD)")
-		return
-	}
-	if f.EndDate, err = parseDate(q.Get("endDate")); err != nil {
-		writeError(w, http.StatusBadRequest, "endDate inválido (use YYYY-MM-DD)")
-		return
-	}
-	if f.StartDate != nil && f.EndDate != nil && f.EndDate.Before(*f.StartDate) {
-		writeError(w, http.StatusBadRequest, "endDate deve ser maior ou igual a startDate")
+	var ok bool
+	if f.StartDate, f.EndDate, ok = parseDateRange(w, q); !ok {
 		return
 	}
 	events, err := h.st.SearchEvents(r.Context(), f)
@@ -209,7 +203,63 @@ func (h *handler) getBooking(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, b)
 }
 
+// GET /api/venues — lista os locais (usado no filtro do relatório /admin).
+func (h *handler) listVenues(w http.ResponseWriter, r *http.Request) {
+	venues, err := h.st.ListVenues(r.Context())
+	if err != nil {
+		h.internalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, venues)
+}
+
+// GET /api/admin/tickets?venueId=&startDate=YYYY-MM-DD&endDate=YYYY-MM-DD
+// Relatório: um item por assento (vendido, reservado ou disponível) com o
+// comprador. Diferente da busca pública, inclui eventos que já aconteceram.
+func (h *handler) adminTickets(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	var f store.AdminFilter
+	if v := q.Get("venueId"); v != "" {
+		id, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || id <= 0 {
+			writeError(w, http.StatusBadRequest, "venueId inválido")
+			return
+		}
+		f.VenueID = id
+	}
+	var ok bool
+	if f.StartDate, f.EndDate, ok = parseDateRange(w, q); !ok {
+		return
+	}
+	tickets, err := h.st.AdminTickets(r.Context(), f)
+	if err != nil {
+		h.internalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, tickets)
+}
+
 // ---- helpers ----
+
+// parseDateRange lê startDate/endDate da query string. As datas são validadas
+// aqui para responder 400 com mensagem clara, em vez de deixar o Postgres
+// falhar com erro de conversão (500). Se falhar, já responde 400 e devolve ok=false.
+func parseDateRange(w http.ResponseWriter, q url.Values) (start, end *time.Time, ok bool) {
+	var err error
+	if start, err = parseDate(q.Get("startDate")); err != nil {
+		writeError(w, http.StatusBadRequest, "startDate inválido (use YYYY-MM-DD)")
+		return nil, nil, false
+	}
+	if end, err = parseDate(q.Get("endDate")); err != nil {
+		writeError(w, http.StatusBadRequest, "endDate inválido (use YYYY-MM-DD)")
+		return nil, nil, false
+	}
+	if start != nil && end != nil && end.Before(*start) {
+		writeError(w, http.StatusBadRequest, "endDate deve ser maior ou igual a startDate")
+		return nil, nil, false
+	}
+	return start, end, true
+}
 
 // uuidRe valida o formato textual de um UUID (8-4-4-4-12 hexadecimais).
 var uuidRe = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)

@@ -26,7 +26,7 @@ make loadtest      # 50 reservas simultâneas no mesmo assento -> espera 1x201 e
 make go-check      # gofmt + go vet + go build dentro de um container golang
 make fe-check      # tsc + vite build dentro de um container node
 ```
-URLs: http://localhost:5173 (web), http://localhost:5173/event/jota-quest-rio-de-janeiro, http://localhost:8080/api/events
+URLs: http://localhost:5173 (web), http://localhost:5173/event/jota-quest-rio-de-janeiro, http://localhost:5173/admin, http://localhost:8080/api/events
 
 ## Estrutura
 ```
@@ -40,6 +40,7 @@ frontend/src/
   api.ts              tipos + cliente HTTP
   pages/HomePage.tsx  lista + busca (filtros na query string)
   pages/EventPage.tsx detalhe, mapa de assentos, reserva, countdown, confirmação
+  pages/AdminPage.tsx relatório de ingressos (filtros local/data/status, botão atualizar)
   components/SeatMap.tsx
 docs/                 arquitetura, API, decisões (ADRs), roadmap
 ```
@@ -48,6 +49,6 @@ docs/                 arquitetura, API, decisões (ADRs), roadmap
 - Documentação e mensagens ao usuário em **português**; identificadores de código em inglês.
 - Schema: **nunca editar migration já aplicada**; criar `backend/internal/db/migrations/NNN_descricao.sql`.
 - Seed (`seed.sql`) só roda se `events` estiver vazia; após mudá-lo use `make reset`.
-- Toda rota da API fica sob `/api`. Rotas do frontend: `/` e `/event/:slug`.
+- Toda rota da API fica sob `/api`. Rotas do frontend: `/`, `/event/:slug` e `/admin` (relatório).
 - Ao concluir uma mudança relevante: atualizar `docs/api.md` / `docs/architecture.md`, registrar decisão em
   `docs/decisions.md` e marcar o item em `docs/roadmap.md` (seção "Histórico").

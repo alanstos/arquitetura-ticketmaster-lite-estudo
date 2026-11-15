@@ -84,6 +84,13 @@ inclusivo. Só eventos futuros (`starts_at >= now()`) são listados.
 - `/` — lista de eventos + formulário de busca; filtros ficam na query string.
 - `/event/:slug` — URL amigável; mostra o mapa 3x3 (livre / selecionado / sua reserva / reservado / vendido),
   faz **polling a cada 5 s** para refletir compras de outros usuários, countdown do hold e botão de confirmar.
+- `/admin` — **relatório de ingressos** (link "Relatório" no topo): tabela com todos os assentos, status
+  (vendido / reservado / disponível), comprador (nome, e-mail), data da compra ou fim do hold e valor.
+  - Filtros de **local** e **intervalo de datas do evento** vão para o servidor (`GET /api/admin/tickets`);
+    o filtro de **status** é feito no cliente (chips com contagem + receita dos vendidos).
+    Todos ficam na query string (`/admin?venueId=1&startDate=...&status=SOLD`).
+  - **Sem polling**: recarrega só ao mudar filtros ou clicar em "Atualizar" (ícone gira durante a carga).
+  - Leitura pura, sem lock: usa a mesma regra de expiração preguiçosa (`freeSeatSQL`), então bate com o mapa.
 
 ## Configuração (env do backend)
 | Variável | Padrão | Uso |
