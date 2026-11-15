@@ -5,8 +5,10 @@
 ```
  Browser ──► frontend (Vite dev server :5173) ──/api──► backend Go (:8080) ──► Postgres 16 (:5432)
               React SPA                          proxy    net/http + pgx    │    fonte da verdade
-                                                                            └──► Redis 7 (:6379)
-                                                                                 seat gate (opcional)
+                                                                            ├──► Redis 7 (:6379)
+                                                                            │    seat gate (opcional)
+                                                                            └──► Elasticsearch 8 (:9200)
+                                                                                 índice de busca (opcional)
                                                      │
                                                      └── OTLP/HTTP ──► grafana/otel-lgtm (:3000 Grafana, :4318 OTLP)
                                                          traces, métricas, logs   Collector → Tempo / Prometheus / Loki
@@ -115,10 +117,41 @@ leituras e na própria reserva (expiração preguiçosa). Na confirmação:
 A confirmação usa `clock_timestamp()` (hora real) em vez de `now()` (hora do início da transação) para
 não aceitar pagamento milissegundos após o prazo.
 
-## Busca
-`GET /api/search` usa `unaccent(...) ILIKE` sobre `nome do evento + nome do local + cidade`
-("sao paulo" encontra "São Paulo"). Datas são comparadas no fuso `America/Sao_Paulo` e o intervalo é
-inclusivo. Só eventos futuros (`starts_at >= now()`) são listados.
+## Busca (ADR-013)
+O Postgres continua sendo a fonte da verdade; o Elasticsearch é um **índice derivado e opcional**.
+
+```
+escrita:  INSERT/UPDATE/DELETE events, UPDATE venues(name, city)
+            └─ trigger (mesma transação) ─► search_outbox(event_id) + pg_notify('search_outbox')
+          internal/search.Indexer (goroutine, LISTEN + poll de 5 s)
+            └─ lote FOR UPDATE SKIP LOCKED ─► lê estado atual dos eventos ─► POST /_bulk ─► DELETE do outbox
+
+leitura:  GET /api/search?keyword=...
+            ├─ Elasticsearch: IDs por relevância (≤ 50)  ── timeout 500 ms / breaker 5 s ──┐
+            │    └─ Postgres: eventSummarySelect WHERE e.id = ANY(ids) (+ filtros de data)   │ falhou
+            │       e reordena pela ordem do ES                                              ▼
+            └─ sem keyword / ES desligado ─────────────────────► Postgres: unaccent(...) ILIKE (ordem por data)
+```
+
+- **Outbox transacional**: a mudança só entra na fila se o COMMIT acontecer; a linha só sai depois do `_bulk`
+  confirmado (pelo menos uma vez; documento = estado atual, então reprocessar é idempotente). Evento sumiu
+  do Postgres → `delete` no índice.
+- **Índice** `events_v1` atrás do alias `events` (troca de mapping sem downtime). Na criação do índice (1ª
+  subida ou volume do ES apagado), o indexer enfileira todos os eventos. `make es-reindex` faz o mesmo à mão.
+- **Analyzers**: `pt_text` (minúsculas + stemmer `light_portuguese` + `asciifolding`) e `all.prefix`
+  (edge n-grams 2–20 na indexação). Campos `name`, `description`, `venue_name`, `city` são copiados para
+  `all`, então "jazz rio" exige as duas palavras mas em qualquer campo.
+- **Query**: `match` em `all` e em `all.prefix` com `operator: and`, `fuzziness: AUTO`, `prefix_length: 1`;
+  reforço por `multi_match` em `name^3, venue_name^2, city^2, description`. Fuzzy sobre prefixos faz
+  `casa` ≈ `casi`(nha). Filtros de data com `||/d` e `time_zone: America/Sao_Paulo`.
+- **Dados frescos**: o ES só decide quais eventos e em que ordem; nome, preço e assentos livres vêm do Postgres
+  na mesma requisição. Atraso de indexação típico: < 1 s.
+- **Degradação**: ES fora → readiness `degraded`, busca usa `ILIKE`, métrica
+  `ticketmaster.search.fallback{reason=error|breaker_open}`. Duração (ms) por backend em `ticketmaster.search.duration`; painéis na linha "Busca" do dashboard.
+  A 1ª busca com a JVM do ES "fria" pode estourar os 500 ms e cair no fallback por 5 s.
+
+Sem keyword, a busca continua sendo `unaccent(...) ILIKE` + datas, no fuso `America/Sao_Paulo`, intervalo
+inclusivo, só eventos futuros (`starts_at >= now()`).
 
 ## Frontend
 - `/` — lista de eventos + formulário de busca; filtros ficam na query string.

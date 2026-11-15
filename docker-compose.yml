@@ -28,6 +28,25 @@ services:
       timeout: 3s
       retries: 30
 
+  # Busca de eventos (ADR-013): índice derivado do Postgres, alimentado pelo
+  # search_outbox. Nó único e sem segurança: só para estudo/local.
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.3
+    environment:
+      discovery.type: single-node          # também desliga os bootstrap checks de produção
+      xpack.security.enabled: "false"      # sem TLS/usuário (local)
+      action.auto_create_index: "false"    # escrever num índice inexistente = erro, não índice com mapping errado
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+    ports:
+      - "9200:9200"
+    volumes:
+      - esdata:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs 'http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=1s' >/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
   # Observabilidade (ADR-011): OTel Collector + Prometheus (métricas) + Tempo (traces)
   # + Loki (logs) + Grafana num só container, para estudo. Grafana: http://localhost:3000
   lgtm:
@@ -54,6 +73,8 @@ services:
       # Para mandar ao Datadog: apontar para um Datadog Agent com OTLP habilitado.
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT-http://lgtm:4318}
       OTEL_SERVICE_NAME: ticketmaster-api
+      # Busca com Elasticsearch (ADR-013). Vazio => busca ILIKE só no Postgres.
+      ES_URL: ${ES_URL-http://elasticsearch:9200}
     ports:
       - "8080:8080"
     depends_on:
@@ -61,6 +82,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      elasticsearch:
+        condition: service_started   # ES demora ~30 s; até lá a busca usa o fallback e o indexer tenta de novo
       lgtm:
         condition: service_started   # exporter tenta de novo sozinho se o coletor ainda não subiu
     healthcheck:
@@ -84,4 +107,5 @@ services:
 
 volumes:
   pgdata:
+  esdata:
   lgtmdata:

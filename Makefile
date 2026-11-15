@@ -1,4 +1,4 @@
-.PHONY: up down logs reset loadtest go-check fe-check psql obs
+.PHONY: up down logs reset loadtest go-check fe-check psql obs es-reindex es-search
 
 up:
 	docker compose up -d --build
@@ -22,6 +22,16 @@ obs:
 	@echo "Grafana:    http://localhost:3000/d/ticketmaster-lite"
 	@echo "Explore:    http://localhost:3000/explore  (Tempo = traces, Loki = logs, Prometheus = métricas)"
 	@echo "Readiness:  http://localhost:8080/api/health/ready"
+	@echo "Elastic:    http://localhost:9200/events/_count"
+
+# Busca (ADR-013): enfileira todos os eventos no outbox; o indexer reenvia ao Elasticsearch.
+es-reindex:
+	docker compose exec postgres psql -U ticket -d ticketmaster -c \
+		"INSERT INTO search_outbox (event_id) SELECT id FROM events; NOTIFY search_outbox;"
+
+# Ex.: make es-search q=casa
+es-search:
+	curl -s "http://localhost:8080/api/search?keyword=$(q)" | python3 -m json.tool
 
 psql:
 	docker compose exec postgres psql -U ticket -d ticketmaster

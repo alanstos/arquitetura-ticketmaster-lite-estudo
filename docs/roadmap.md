@@ -11,7 +11,9 @@
 - [ ] Proteger `/admin` e `/api/admin/*` (auth + papel de administrador) — hoje expõe nome/e-mail (ADR-009)
 - [ ] Paginação e exportação CSV no relatório `/admin`
 - [ ] Venues com tamanhos variados / setores e preços por setor
-- [ ] Paginação na listagem/busca; índice trigram (`pg_trgm`) para a busca
+- [ ] Paginação na listagem/busca (`search_after` no Elasticsearch)
+- [ ] Busca: autocomplete/sugestões ("você quis dizer…") e destaque (`highlight`) do termo encontrado
+- [ ] Busca: comparar com `pg_trgm` + full-text do Postgres (sem componente extra) — ver ADR-013
 - [ ] Idempotency-Key no `POST /reserve`
 - [ ] Build de produção do frontend (nginx) e compose de "prod"
 - [ ] Trocar runner de migrations por golang-migrate ou goose
@@ -20,6 +22,17 @@
 - [ ] Observabilidade: SLO de disponibilidade/latência da reserva; testar envio ao Datadog via OTLP
 
 ## Histórico
+### 2026-11-15 — Busca aproximada com Elasticsearch
+- `GET /api/search` com `keyword` tolera erro de digitação (`jota qest`), acha por prefixo/radical
+  (`casa` → casas, casarão, casinha) e ordena por relevância; mesmo contrato da API.
+- Elasticsearch 8.15 no compose (`ES_URL`, vazio desliga). Novo `internal/search`: cliente REST puro,
+  mapping/analyzers em português, query fuzzy, circuit breaker, indexer.
+- Migration `003_search_outbox`: triggers em `events`/`venues` gravam no outbox na mesma transação + NOTIFY.
+- Fallback para `ILIKE` no Postgres; readiness `degraded` com ES fora; métricas `ticketmaster.search.*` e
+  painéis no Grafana. Seed com 3 eventos "casa/casinha/casas" (exige `make reset`). Alvos `make es-reindex`/`es-search`.
+- Validado: cenários de busca acima, filtro de datas inclusivo, update/delete refletidos em ~1 s,
+  ES parado → fallback (~4 ms com breaker aberto), loadtest 1×201/49×409. Decisão no ADR-013.
+
 ### 2026-11-15 — Mapa de assentos em tempo real (SSE)
 - [x] Atualização em tempo real do mapa (SSE/WebSocket) em vez de polling.
 - `GET /api/events/{idOrSlug}/stream` (Server-Sent Events) com snapshot completo do mapa a cada mudança.
