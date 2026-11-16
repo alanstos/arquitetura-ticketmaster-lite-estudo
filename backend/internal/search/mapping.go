@@ -2,11 +2,13 @@ package search
 
 // Analyzers: como o texto é quebrado em termos, tanto ao indexar quanto ao buscar.
 //
-//	"Casarão Cultural" --pt_text-->   [casarao, cultural]           (radical + sem acento)
+//	"Casarão Cultural" --pt_text-->   [casara, cultural]            (radical + sem acento)
 //	                   --pt_prefix--> [ca, cas, casa, casar, ..., casarao, cu, cul, ...]
 //
 // pt_text: minúsculas + stemmer leve de português + remove acentos. "casas" e
-// "casa" viram o mesmo termo; "São Paulo" casa com "sao paulo".
+// "casa" viram o mesmo termo; "São Paulo" casa com "sao paulo". O stemmer roda
+// antes do asciifolding, então corta o "ão" de "casarão" (casara). Não há
+// problema: o mesmo analyzer é usado na indexação e na busca.
 //
 // pt_prefix (só na indexação): gera todos os prefixos (edge n-grams) de cada
 // palavra. Na busca usa pt_plain (sem n-gram): a palavra digitada é comparada

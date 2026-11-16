@@ -155,3 +155,21 @@ Formato: contexto → decisão → consequências. Adicione novas no final, nume
   - Também busca na descrição (o `ILIKE` não buscava); o fallback continua sem descrição e sem tolerância a erro.
   - Pequeno custo nas escritas de `events`/`venues` (uma linha no outbox por evento afetado).
 
+
+## ADR-014 — Kibana sob demanda para inspecionar o Elasticsearch
+- **Contexto**: o Elasticsearch (ADR-013) só era inspecionado via `curl`. Para estudar analyzers, mapping,
+  score (BM25) e fuzziness, falta uma UI.
+- **Decisão**: **Kibana 8.15.3** (mesma versão do ES, obrigatório) no compose, no **profile `tools`**:
+  só sobe com `make kibana`. Um container one-shot (`kibana-setup`, curl) cria a data view `events` via API
+  (`override: true`, idempotente), sem campo de tempo. Exemplos prontos para o Dev Tools em
+  `observability/kibana/console-exemplos.txt`.
+- **Alternativas**:
+  - **Elasticvue / Cerebro**: leves (~50 MB), bons para navegar índices e documentos; exigem CORS no ES e não
+    têm Console com autocomplete, `_analyze`/`profile` visual nem Discover.
+  - **Só `curl` / `make es-search`**: zero custo, mas pouco didático para explorar score e analyzers.
+- **Consequências**:
+  - +~1 GB de RAM e ~1 min de subida, **só quando ligado**; `make up` continua igual.
+  - Sem volume próprio: os saved objects ficam no ES (`.kibana*`) e somem com `esdata`; o setup os recria.
+  - Versão do Kibana presa à do ES: subir um exige subir o outro.
+  - Sem segurança (como o ES): só para uso local. `make down`/`reset` usam `--profile tools` para não deixar
+    o Kibana órfão.

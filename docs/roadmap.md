@@ -22,6 +22,13 @@
 - [ ] Observabilidade: SLO de disponibilidade/latência da reserva; testar envio ao Datadog via OTLP
 
 ## Histórico
+### 2026-11-16 — Kibana para inspecionar o Elasticsearch
+- `make kibana` sobe Kibana 8.15.3 (compose profile `tools`, fora do `make up`) em http://localhost:5601;
+  `make kibana-down` para. `kibana-setup` cria a data view `events` automaticamente.
+- `observability/kibana/console-exemplos.txt`: alias/mapping/settings, `_analyze` dos analyzers,
+  query igual à do backend, `explain`, `profile` e filtro de datas.
+- `make down`/`reset` passam `--profile tools`. Decisão no ADR-014.
+
 ### 2026-11-15 — Busca aproximada com Elasticsearch
 - `GET /api/search` com `keyword` tolera erro de digitação (`jota qest`), acha por prefixo/radical
   (`casa` → casas, casarão, casinha) e ordena por relevância; mesmo contrato da API.

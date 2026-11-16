@@ -1,17 +1,17 @@
-.PHONY: up down logs reset loadtest go-check fe-check psql obs es-reindex es-search
+.PHONY: up down logs reset loadtest go-check fe-check psql obs es-reindex es-search kibana kibana-down
 
 up:
 	docker compose up -d --build
 
 down:
-	docker compose down
+	docker compose --profile tools down
 
 logs:
 	docker compose logs -f backend
 
 # Apaga o banco (volume) e sobe de novo, reaplicando migrations + seed.
 reset:
-	docker compose down -v
+	docker compose --profile tools down -v
 	docker compose up -d --build
 
 loadtest:
@@ -23,6 +23,7 @@ obs:
 	@echo "Explore:    http://localhost:3000/explore  (Tempo = traces, Loki = logs, Prometheus = métricas)"
 	@echo "Readiness:  http://localhost:8080/api/health/ready"
 	@echo "Elastic:    http://localhost:9200/events/_count"
+	@echo "Kibana:     http://localhost:5601  (só com make kibana)"
 
 # Busca (ADR-013): enfileira todos os eventos no outbox; o indexer reenvia ao Elasticsearch.
 es-reindex:
@@ -32,6 +33,16 @@ es-reindex:
 # Ex.: make es-search q=casa
 es-search:
 	curl -s "http://localhost:8080/api/search?keyword=$(q)" | python3 -m json.tool
+
+# Kibana (ADR-014), sob demanda: UI do Elasticsearch. Leva ~1 min para ficar pronto.
+kibana:
+	docker compose --profile tools up -d kibana kibana-setup
+	@echo "Kibana:     http://localhost:5601  (aguarde ~1 min: docker compose ps kibana)"
+	@echo "Dev Tools:  http://localhost:5601/app/dev_tools#/console  (exemplos em observability/kibana/console-exemplos.txt)"
+	@echo "Discover:   http://localhost:5601/app/discover  (data view 'events')"
+
+kibana-down:
+	docker compose --profile tools rm -sf kibana kibana-setup
 
 psql:
 	docker compose exec postgres psql -U ticket -d ticketmaster
