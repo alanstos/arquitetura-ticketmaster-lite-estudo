@@ -47,6 +47,43 @@ services:
       timeout: 5s
       retries: 30
 
+  # Kibana (ADR-014): UI para inspecionar o Elasticsearch (Dev Tools, Discover).
+  # Sob demanda: só sobe com o profile "tools" (make kibana). http://localhost:5601
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.15.3   # mesma versão do ES
+    profiles: ["tools"]
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+      TELEMETRY_ENABLED: "false"
+      # Chave fixa só para uso local (evita avisos de saved objects criptografados).
+      XPACK_ENCRYPTEDSAVEDOBJECTS_ENCRYPTIONKEY: ticketmaster-lite-local-only-kibana-key-32
+    ports:
+      - "5601:5601"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:5601/api/status | grep -q '\"level\":\"available\"'"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 30s
+
+  # One-shot: cria a data view "events" no Kibana (idempotente). Os saved objects
+  # ficam no próprio ES (.kibana*), então somem junto com o volume esdata.
+  kibana-setup:
+    image: curlimages/curl:8.10.1
+    profiles: ["tools"]
+    restart: "no"
+    entrypoint: ["sh", "/setup.sh"]
+    environment:
+      KIBANA_URL: http://kibana:5601
+    volumes:
+      - ./observability/kibana/setup.sh:/setup.sh:ro
+    depends_on:
+      kibana:
+        condition: service_healthy
+
   # Observabilidade (ADR-011): OTel Collector + Prometheus (métricas) + Tempo (traces)
   # + Loki (logs) + Grafana num só container, para estudo. Grafana: http://localhost:3000
   lgtm:

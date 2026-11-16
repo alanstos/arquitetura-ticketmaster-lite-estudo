@@ -33,10 +33,11 @@ make fe-check      # tsc + vite build dentro de um container node
 make obs           # mostra as URLs do Grafana / dashboard
 make es-reindex    # reenfileira todos os eventos no outbox -> Elasticsearch
 make es-search q=casa  # testa a busca
+make kibana        # sobe o Kibana sob demanda (profile tools) em :5601; make kibana-down para
 ```
 URLs: http://localhost:5173 (web), http://localhost:5173/event/jota-quest-rio-de-janeiro, http://localhost:5173/admin, http://localhost:8080/api/events,
 http://localhost:8080/api/health/ready, http://localhost:3000/d/ticketmaster-lite (Grafana),
-http://localhost:9200/events/_count (Elasticsearch)
+http://localhost:9200/events/_count (Elasticsearch), http://localhost:5601 (Kibana, só com `make kibana`)
 
 ## Estrutura
 ```
@@ -56,7 +57,8 @@ frontend/src/
   pages/EventPage.tsx detalhe, mapa de assentos (SSE via EventSource), reserva, countdown, confirmação
   pages/AdminPage.tsx relatório de ingressos (filtros local/data/status, botão atualizar)
   components/SeatMap.tsx
-observability/        provisioning + dashboard JSON do Grafana (montados no container lgtm)
+observability/        provisioning + dashboard JSON do Grafana (montados no container lgtm);
+                      kibana/: setup da data view + exemplos para o Dev Tools
 docs/                 arquitetura, API, decisões (ADRs), roadmap
 ```
 

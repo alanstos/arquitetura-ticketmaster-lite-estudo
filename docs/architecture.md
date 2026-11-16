@@ -9,6 +9,8 @@
                                                                             │    seat gate (opcional)
                                                                             └──► Elasticsearch 8 (:9200)
                                                                                  índice de busca (opcional)
+                                                                                   ▲
+                                                          Kibana 8 (:5601, profile "tools") ┘ inspeção visual (ADR-014)
                                                      │
                                                      └── OTLP/HTTP ──► grafana/otel-lgtm (:3000 Grafana, :4318 OTLP)
                                                          traces, métricas, logs   Collector → Tempo / Prometheus / Loki
@@ -149,6 +151,11 @@ leitura:  GET /api/search?keyword=...
 - **Degradação**: ES fora → readiness `degraded`, busca usa `ILIKE`, métrica
   `ticketmaster.search.fallback{reason=error|breaker_open}`. Duração (ms) por backend em `ticketmaster.search.duration`; painéis na linha "Busca" do dashboard.
   A 1ª busca com a JVM do ES "fria" pode estourar os 500 ms e cair no fallback por 5 s.
+
+- **Inspeção visual (ADR-014)**: `make kibana` sobe o Kibana 8.15.3 (profile `tools`, fora do `make up`).
+  O container one-shot `kibana-setup` cria a data view `events` (sem campo de tempo, pois os eventos são
+  futuros). Exemplos de `_analyze`, query do backend, `explain` e `profile` em
+  `observability/kibana/console-exemplos.txt`, para colar no Dev Tools.
 
 Sem keyword, a busca continua sendo `unaccent(...) ILIKE` + datas, no fuso `America/Sao_Paulo`, intervalo
 inclusivo, só eventos futuros (`starts_at >= now()`).

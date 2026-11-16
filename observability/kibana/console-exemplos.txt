@@ -1,0 +1,103 @@
+# Exemplos para colar no Kibana > Dev Tools > Console (http://localhost:5601/app/dev_tools#/console).
+# Selecione uma requisição e Ctrl+Enter. Referência: backend/internal/search/ (ADR-013).
+
+# --- Índice e alias -----------------------------------------------------------
+# Índices (inclui events_v1 e os internos .kibana*)
+GET _cat/indices?v&s=index
+
+# O alias "events" aponta para events_v1 (troca de mapping sem downtime)
+GET _alias/events
+
+# Mapping (mapping.go): dynamic strict, copy_to "all", subcampo all.prefix
+GET events/_mapping
+
+# Settings: analyzers pt_text / pt_plain / pt_prefix
+GET events/_settings
+
+GET events/_count
+
+# Um documento (o _id é o id do evento no Postgres)
+GET events/_doc/1
+
+# --- Analyzers: como o texto vira termos -------------------------------------
+# pt_text: minúsculas + stemmer light_portuguese + sem acento -> [casara, cultural, sao, paulo]
+# (o stemmer roda antes do asciifolding e corta o "ão" de "casarão")
+POST events/_analyze
+{
+  "analyzer": "pt_text",
+  "text": "Casarão Cultural São Paulo"
+}
+
+# pt_prefix (indexação de all.prefix): edge n-grams 2..20
+POST events/_analyze
+{
+  "analyzer": "pt_prefix",
+  "text": "Casinha"
+}
+
+# pt_plain (busca em all.prefix): sem n-gram, a palavra digitada é comparada com os prefixos
+POST events/_analyze
+{
+  "field": "all.prefix",
+  "text": "casa"
+}
+
+# --- Query igual à do backend (query.go, buildQuery) ---------------------------
+# Troque "jota qest" por "casa", "sao paulo", etc. _source ligado aqui para ver o documento.
+GET events/_search
+{
+  "size": 50,
+  "query": {
+    "bool": {
+      "filter": [
+        { "range": { "starts_at": { "gte": "now" } } }
+      ],
+      "must": {
+        "bool": {
+          "should": [
+            { "match": { "all":        { "query": "jota qest", "operator": "and", "fuzziness": "AUTO", "prefix_length": 1, "boost": 2 } } },
+            { "match": { "all.prefix": { "query": "jota qest", "operator": "and", "fuzziness": "AUTO", "prefix_length": 1, "boost": 1 } } }
+          ],
+          "minimum_should_match": 1
+        }
+      },
+      "should": [
+        { "multi_match": { "query": "jota qest", "fields": ["name^3", "venue_name^2", "city^2", "description"], "fuzziness": "AUTO" } }
+      ]
+    }
+  },
+  "sort": ["_score", { "starts_at": "asc" }]
+}
+
+# --- Por que esse score? -------------------------------------------------------
+# explain: árvore de cálculo do BM25 por documento (sem sort, para o _score aparecer)
+GET events/_search
+{
+  "explain": true,
+  "size": 3,
+  "query": {
+    "match": { "all.prefix": { "query": "casa", "operator": "and", "fuzziness": "AUTO", "prefix_length": 1 } }
+  }
+}
+
+# Termos que a fuzziness expandiu ("casa" ~ "casi", "casas"...) aparecem no explain;
+# profile mostra a query Lucene reescrita e o tempo de cada parte
+GET events/_search
+{
+  "profile": true,
+  "size": 0,
+  "query": {
+    "match": { "all": { "query": "qest", "fuzziness": "AUTO", "prefix_length": 1 } }
+  }
+}
+
+# --- Filtro de datas (mesmo formato do backend: inclusivo, fuso de São Paulo) ---
+GET events/_search
+{
+  "query": {
+    "range": {
+      "starts_at": { "gte": "2026-12-01||/d", "lte": "2026-12-31||/d", "time_zone": "America/Sao_Paulo" }
+    }
+  },
+  "sort": [{ "starts_at": "asc" }]
+}
