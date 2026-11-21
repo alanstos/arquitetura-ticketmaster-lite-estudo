@@ -1,0 +1,110 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1320" height="820" viewBox="0 0 1320 820" role="img" aria-label="Visão geral: navegador, frontend Vite, backend Go, Postgres, Redis, Elasticsearch, Kibana e a stack de observabilidade (OTel Collector, Tempo, Prometheus, Loki, Grafana)">
+  <title>Visão geral: navegador, frontend Vite, backend Go, Postgres, Redis, Elasticsearch, Kibana e a stack de observabilidade (OTel Collector, Tempo, Prometheus, Loki, Grafana)</title>
+  <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#334155"/></marker><marker id="ahs" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#334155"/></marker></defs>
+  <rect x="0.5" y="0.5" width="1319" height="819" rx="14" fill="#ffffff" stroke="#e2e8f0"/>
+  <text x="40" y="42" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0f172a" text-anchor="start">Ticketmaster Lite — visão geral dos serviços</text>
+  <text x="40" y="66" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#475569" text-anchor="start">Tudo sobe com docker compose. Setas sólidas: chamadas da aplicação. Tracejadas: você abrindo a UI no navegador.</text>
+  <rect x="40" y="240" width="170" height="90" rx="10" fill="#e0f2fe" stroke="#0284c7" stroke-width="1.6"/>
+  <text x="125.0" y="272.5" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="middle">Navegador</text>
+  <text x="125.0" y="291.5" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="middle">React SPA</text>
+  <text x="125.0" y="308.5" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="middle">EventSource (SSE)</text>
+  <rect x="270" y="230" width="210" height="110" rx="10" fill="#e0f2fe" stroke="#0284c7" stroke-width="1.6"/>
+  <text x="375.0" y="264.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="middle">frontend</text>
+  <text x="375.0" y="283.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="middle">React 18 + Vite</text>
+  <text x="375.0" y="300.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="middle">:5173</text>
+  <text x="375.0" y="317.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="middle">proxy /api → backend</text>
+  <path d="M 210 285 L 268 285" fill="none" stroke="#334155" stroke-width="1.6" marker-end="url(#ah)"/>
+  <text x="239" y="276" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="middle">HTTP</text>
+  <rect x="540" y="115" width="250" height="335" rx="10" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.6"/>
+  <text x="665" y="142" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="middle">backend Go · :8080</text>
+  <text x="665" y="160" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="middle">net/http + pgx</text>
+  <rect x="558" y="176" width="214" height="36" rx="8" fill="#ffffff" stroke="#a78bfa"/>
+  <text x="572" y="199" font-family="ui-monospace, 'SFMono-Regular', Consolas, 'Liberation Mono', monospace" font-size="13" font-weight="700" fill="#5b21b6" text-anchor="start">api</text>
+  <text x="760" y="199" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="end">handlers HTTP + SSE</text>
+  <rect x="558" y="220" width="214" height="36" rx="8" fill="#ffffff" stroke="#a78bfa"/>
+  <text x="572" y="243" font-family="ui-monospace, 'SFMono-Regular', Consolas, 'Liberation Mono', monospace" font-size="13" font-weight="700" fill="#5b21b6" text-anchor="start">store</text>
+  <text x="760" y="243" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="end">reserva / concorrência</text>
+  <rect x="558" y="264" width="214" height="36" rx="8" fill="#ffffff" stroke="#a78bfa"/>
+  <text x="572" y="287" font-family="ui-monospace, 'SFMono-Regular', Consolas, 'Liberation Mono', monospace" font-size="13" font-weight="700" fill="#5b21b6" text-anchor="start">holds</text>
+  <text x="760" y="287" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="end">seat gate (Redis)</text>
+  <rect x="558" y="308" width="214" height="36" rx="8" fill="#ffffff" stroke="#a78bfa"/>
+  <text x="572" y="331" font-family="ui-monospace, 'SFMono-Regular', Consolas, 'Liberation Mono', monospace" font-size="13" font-weight="700" fill="#5b21b6" text-anchor="start">search</text>
+  <text x="760" y="331" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="end">busca + indexer</text>
+  <rect x="558" y="352" width="214" height="36" rx="8" fill="#ffffff" stroke="#a78bfa"/>
+  <text x="572" y="375" font-family="ui-monospace, 'SFMono-Regular', Consolas, 'Liberation Mono', monospace" font-size="13" font-weight="700" fill="#5b21b6" text-anchor="start">live</text>
+  <text x="760" y="375" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="end">hub LISTEN → SSE</text>
+  <rect x="558" y="396" width="214" height="36" rx="8" fill="#ffffff" stroke="#a78bfa"/>
+  <text x="572" y="419" font-family="ui-monospace, 'SFMono-Regular', Consolas, 'Liberation Mono', monospace" font-size="13" font-weight="700" fill="#5b21b6" text-anchor="start">telemetry</text>
+  <text x="760" y="419" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="end">OpenTelemetry</text>
+  <path d="M 480 285 L 538 285" fill="none" stroke="#334155" stroke-width="1.6" marker-end="url(#ah)"/>
+  <text x="509" y="276" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="middle">/api/*</text>
+  <text x="509" y="303" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="400" fill="#475569" text-anchor="middle">REST + SSE</text>
+  <rect x="900" y="115" width="210" height="100" rx="10" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.6"/>
+  <text x="1005.0" y="144.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="middle">Postgres 16</text>
+  <text x="1005.0" y="163.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="middle">:5432</text>
+  <text x="1005.0" y="180.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="middle">fonte da verdade</text>
+  <text x="1005.0" y="197.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="middle">LISTEN/NOTIFY · outbox</text>
+  <rect x="900" y="245" width="210" height="80" rx="10" fill="#fee2e2" stroke="#dc2626" stroke-width="1.6"/>
+  <text x="1005.0" y="272.5" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="middle">Redis 7</text>
+  <text x="1005.0" y="291.5" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="middle">:6379</text>
+  <text x="1005.0" y="308.5" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="middle">holds com TTL (Lua)</text>
+  <rect x="1036.0" y="236" width="68.0" height="18" rx="9" fill="#ffffff" stroke="#dc2626"/>
+  <text x="1070.0" y="249" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="600" fill="#dc2626" text-anchor="middle">opcional</text>
+  <rect x="900" y="350" width="210" height="100" rx="10" fill="#fef9c3" stroke="#ca8a04" stroke-width="1.6"/>
+  <text x="1005.0" y="379.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="middle">Elasticsearch 8</text>
+  <text x="1005.0" y="398.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="middle">:9200</text>
+  <text x="1005.0" y="415.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="middle">índice de busca</text>
+  <text x="1005.0" y="432.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="middle">(derivado do Postgres)</text>
+  <rect x="1036.0" y="341" width="68.0" height="18" rx="9" fill="#ffffff" stroke="#ca8a04"/>
+  <text x="1070.0" y="354" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="600" fill="#ca8a04" text-anchor="middle">opcional</text>
+  <rect x="1140" y="360" width="155" height="80" rx="10" fill="#f1f5f9" stroke="#64748b" stroke-width="1.6"/>
+  <text x="1217.5" y="387.5" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="middle">Kibana 8</text>
+  <text x="1217.5" y="406.5" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="middle">:5601</text>
+  <text x="1217.5" y="423.5" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="middle">profile tools</text>
+  <rect x="1200.0" y="351" width="89.0" height="18" rx="9" fill="#ffffff" stroke="#64748b"/>
+  <text x="1244.5" y="364" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="600" fill="#64748b" text-anchor="middle">sob demanda</text>
+  <path d="M 790 150 L 898 150" fill="none" stroke="#334155" stroke-width="1.6" marker-end="url(#ah)"/>
+  <text x="844" y="141" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="middle">SQL (pgx)</text>
+  <path d="M 898 182 L 792 182" fill="none" stroke="#334155" stroke-width="1.6" marker-end="url(#ah)"/>
+  <text x="844" y="200" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="middle">NOTIFY</text>
+  <path d="M 790 285 L 898 285" fill="none" stroke="#334155" stroke-width="1.6" marker-end="url(#ah)"/>
+  <text x="844" y="276" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="middle">script Lua</text>
+  <path d="M 790 400 L 898 400" fill="none" stroke="#334155" stroke-width="1.6" marker-end="url(#ah)"/>
+  <text x="844" y="391" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="middle">busca · _bulk</text>
+  <path d="M 1138 400 L 1112 400" fill="none" stroke="#334155" stroke-width="1.6" marker-end="url(#ah)"/>
+  <rect x="540" y="520" width="750" height="220" rx="14" fill="none" stroke="#ea580c" stroke-width="1.4" stroke-dasharray="7 5"/>
+  <text x="554" y="542" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#ea580c" text-anchor="start">grafana/otel-lgtm · um container só</text>
+  <rect x="565" y="600" width="180" height="90" rx="10" fill="#ffedd5" stroke="#ea580c" stroke-width="1.6"/>
+  <text x="655.0" y="641.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="middle">OTel Collector</text>
+  <text x="655.0" y="660.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="middle">:4318 OTLP/HTTP</text>
+  <rect x="800" y="562" width="215" height="46" rx="10" fill="#ffedd5" stroke="#ea580c" stroke-width="1.6"/>
+  <text x="907.5" y="589.5" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="middle">Tempo · traces</text>
+  <rect x="800" y="622" width="215" height="46" rx="10" fill="#ffedd5" stroke="#ea580c" stroke-width="1.6"/>
+  <text x="907.5" y="649.5" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="middle">Prometheus · métricas</text>
+  <rect x="800" y="682" width="215" height="46" rx="10" fill="#ffedd5" stroke="#ea580c" stroke-width="1.6"/>
+  <text x="907.5" y="709.5" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="middle">Loki · logs</text>
+  <rect x="1070" y="600" width="200" height="90" rx="10" fill="#ffedd5" stroke="#ea580c" stroke-width="1.6"/>
+  <text x="1170.0" y="632.5" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="middle">Grafana</text>
+  <text x="1170.0" y="651.5" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="middle">:3000</text>
+  <text x="1170.0" y="668.5" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="middle">dashboard + Explore</text>
+  <path d="M 655 450 L 655 598" fill="none" stroke="#334155" stroke-width="1.6" marker-end="url(#ah)"/>
+  <text x="665" y="490" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="start">OTLP: traces,</text>
+  <text x="665" y="505" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="start">métricas e logs</text>
+  <path d="M 745 645 L 772 645 L 772 585 L 798 585" fill="none" stroke="#334155" stroke-width="1.6" marker-end="url(#ah)"/>
+  <path d="M 1015 585 L 1042 585 L 1042 645 L 1068 645" fill="none" stroke="#334155" stroke-width="1.6" marker-end="url(#ah)"/>
+  <path d="M 745 645 L 772 645 L 772 645 L 798 645" fill="none" stroke="#334155" stroke-width="1.6" marker-end="url(#ah)"/>
+  <path d="M 1015 645 L 1042 645 L 1042 645 L 1068 645" fill="none" stroke="#334155" stroke-width="1.6" marker-end="url(#ah)"/>
+  <path d="M 745 645 L 772 645 L 772 705 L 798 705" fill="none" stroke="#334155" stroke-width="1.6" marker-end="url(#ah)"/>
+  <path d="M 1015 705 L 1042 705 L 1042 645 L 1068 645" fill="none" stroke="#334155" stroke-width="1.6" marker-end="url(#ah)"/>
+  <path d="M 125 330 L 125 775 L 1170 775 L 1170 692" fill="none" stroke="#334155" stroke-width="1.6" stroke-dasharray="6 5" marker-end="url(#ah)"/>
+  <text x="300" y="768" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="start" font-style="italic">você abre o Grafana em http://localhost:3000</text>
+  <path d="M 125 240 L 125 90 L 1170 90 L 1170 358" fill="none" stroke="#334155" stroke-width="1.6" stroke-dasharray="6 5" marker-end="url(#ah)"/>
+  <text x="1210" y="84" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="end" font-style="italic">você abre o Kibana em http://localhost:5601</text>
+  <rect x="150" y="540" width="370" height="150" rx="10" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="166" y="564" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#0f172a" text-anchor="start">Para ler o diagrama</text>
+  <text x="166" y="590" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">• Postgres decide o assento; Redis e ES só aceleram.</text>
+  <text x="166" y="610" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">• Sem REDIS_URL / ES_URL: tudo só no Postgres.</text>
+  <text x="166" y="630" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">• Mapa de assentos chega via SSE pelo proxy /api.</text>
+  <text x="166" y="650" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">• ES é alimentado pela tabela search_outbox.</text>
+  <text x="166" y="670" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">• Sem endpoint OTLP: só logs JSON no stdout.</text>
+</svg>
