@@ -3,6 +3,19 @@
 Venda de ingressos com lugar marcado (matriz 3x3 por local), com foco em **impedir que dois usuários comprem
 o mesmo assento**. Monorepo: backend Go + frontend React + Postgres, tudo em Docker.
 
+## Arquitetura
+
+![Visão geral dos serviços: navegador, frontend, backend Go, Postgres, Redis, Elasticsearch, Kibana e observabilidade](docs/img/arquitetura-visao-geral.svg)
+
+<details>
+<summary><b>Fluxos dentro do backend</b>: reserva, mapa em tempo real (SSE) e busca (outbox → Elasticsearch)</summary>
+
+![Fluxos internos: reserva com seat gate Redis + Postgres, LISTEN/NOTIFY → SSE e outbox → Elasticsearch](docs/img/arquitetura-fluxos.svg)
+
+</details>
+
+Detalhes em [docs/architecture.md](docs/architecture.md).
+
 ## Rodando (WSL + Docker)
 ```bash
 make up        # ou: docker compose up -d --build

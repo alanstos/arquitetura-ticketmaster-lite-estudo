@@ -22,6 +22,10 @@
 - [ ] Observabilidade: SLO de disponibilidade/latência da reserva; testar envio ao Datadog via OTLP
 
 ## Histórico
+### 2026-11-21 — Diagramas de arquitetura no README
+- `docs/img/arquitetura-visao-geral.svg` (containers e quem chama quem) e `docs/img/arquitetura-fluxos.svg`
+  (reserva Redis + Postgres, LISTEN/NOTIFY → SSE, outbox → Elasticsearch), exibidos no README e em `architecture.md`.
+
 ### 2026-11-16 — Kibana para inspecionar o Elasticsearch
 - `make kibana` sobe Kibana 8.15.3 (compose profile `tools`, fora do `make up`) em http://localhost:5601;
   `make kibana-down` para. `kibana-setup` cria a data view `events` automaticamente.

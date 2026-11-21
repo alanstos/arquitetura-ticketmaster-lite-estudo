@@ -1,0 +1,115 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1320" height="1010" viewBox="0 0 1320 1010" role="img" aria-label="Fluxos internos: reserva com seat gate Redis + Postgres, mapa em tempo real via LISTEN/NOTIFY e SSE, busca via outbox e Elasticsearch">
+  <title>Fluxos internos: reserva com seat gate Redis + Postgres, mapa em tempo real via LISTEN/NOTIFY e SSE, busca via outbox e Elasticsearch</title>
+  <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#334155"/></marker><marker id="ahs" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#334155"/></marker></defs>
+  <rect x="0.5" y="0.5" width="1319" height="1009" rx="14" fill="#ffffff" stroke="#e2e8f0"/>
+  <text x="40" y="42" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0f172a" text-anchor="start">Ticketmaster Lite — fluxos dentro do backend</text>
+  <text x="40" y="66" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#475569" text-anchor="start">Reserva sem venda duplicada, mapa de assentos em tempo real e busca alimentada por outbox transacional.</text>
+  <rect x="20" y="90" width="1280" height="280" rx="12" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="40" y="118" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#0f172a" text-anchor="start">1 · Reserva de assento (síncrono, ADR-010)</text>
+  <rect x="40" y="175" width="180" height="90" rx="10" fill="#e0f2fe" stroke="#0284c7" stroke-width="1.6"/>
+  <text x="130.0" y="216.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="middle">POST</text>
+  <text x="130.0" y="235.0" font-family="ui-monospace, 'SFMono-Regular', Consolas, 'Liberation Mono', monospace" font-size="12.5" font-weight="400" fill="#475569" text-anchor="middle">/api/reserve</text>
+  <rect x="300" y="165" width="250" height="110" rx="10" fill="#fee2e2" stroke="#dc2626" stroke-width="1.6"/>
+  <text x="425.0" y="207.5" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="middle">Seat gate · Redis</text>
+  <text x="425.0" y="226.5" font-family="ui-monospace, 'SFMono-Regular', Consolas, 'Liberation Mono', monospace" font-size="12.5" font-weight="400" fill="#475569" text-anchor="middle">SET NX PX &lt;TTL&gt;</text>
+  <text x="425.0" y="243.5" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="middle">script Lua, tudo ou nada</text>
+  <rect x="441.0" y="156" width="103.0" height="18" rx="9" fill="#ffffff" stroke="#dc2626"/>
+  <text x="492.5" y="169" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="600" fill="#dc2626" text-anchor="middle">filtro rápido</text>
+  <rect x="640" y="165" width="290" height="110" rx="10" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.6"/>
+  <text x="785.0" y="207.5" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="middle">Postgres · transação</text>
+  <text x="785.0" y="226.5" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="middle">UPDATE condicional</text>
+  <text x="785.0" y="243.5" font-family="ui-monospace, 'SFMono-Regular', Consolas, 'Liberation Mono', monospace" font-size="12.5" font-weight="400" fill="#475569" text-anchor="middle">FOR UPDATE SKIP LOCKED</text>
+  <rect x="870.0" y="156" width="54.0" height="18" rx="9" fill="#ffffff" stroke="#1d4ed8"/>
+  <text x="897.0" y="169" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="600" fill="#1d4ed8" text-anchor="middle">decide</text>
+  <rect x="1030" y="175" width="240" height="90" rx="10" fill="#dcfce7" stroke="#16a34a" stroke-width="1.6"/>
+  <text x="1150.0" y="216.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="middle">201 Created</text>
+  <text x="1150.0" y="235.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="middle">hold de 5 min → confirmar</text>
+  <path d="M 220 220 L 298 220" fill="none" stroke="#334155" stroke-width="1.6" marker-end="url(#ah)"/>
+  <path d="M 550 220 L 638 220" fill="none" stroke="#334155" stroke-width="1.6" marker-end="url(#ah)"/>
+  <text x="594" y="211" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="middle">livre</text>
+  <path d="M 930 220 L 1028 220" fill="none" stroke="#334155" stroke-width="1.6" marker-end="url(#ah)"/>
+  <text x="979" y="211" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="middle">assentos ok</text>
+  <rect x="320" y="300" width="210" height="58" rx="10" fill="#fee2e2" stroke="#b91c1c" stroke-width="1.6"/>
+  <text x="425.0" y="325.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="middle">409 Conflict</text>
+  <text x="425.0" y="344.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="middle">já seguro por outro</text>
+  <rect x="1030" y="300" width="240" height="58" rx="10" fill="#fee2e2" stroke="#b91c1c" stroke-width="1.6"/>
+  <text x="1150.0" y="325.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="middle">409 Conflict</text>
+  <text x="1150.0" y="344.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="middle">e apaga as chaves do Redis</text>
+  <path d="M 425 275 L 425 298" fill="none" stroke="#334155" stroke-width="1.6" marker-end="url(#ah)"/>
+  <path d="M 785 275 L 785 329 L 1028 329" fill="none" stroke="#334155" stroke-width="1.6" marker-end="url(#ah)"/>
+  <text x="905" y="321" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="middle">perdeu a disputa</text>
+  <path d="M 130 175 L 130 140 L 785 140 L 785 163" fill="none" stroke="#334155" stroke-width="1.6" stroke-dasharray="6 5" marker-end="url(#ah)"/>
+  <text x="460" y="133" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="middle" font-style="italic">Redis fora ou lento (&gt; 300 ms) → circuit breaker 2 s, segue só com o Postgres</text>
+  <rect x="20" y="390" width="1280" height="250" rx="12" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="40" y="418" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#0f172a" text-anchor="start">2 · Mapa de assentos em tempo real (SSE, ADR-012)</text>
+  <rect x="40" y="470" width="190" height="100" rx="10" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.6"/>
+  <text x="135.0" y="507.5" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="middle">UPDATE tickets</text>
+  <text x="135.0" y="526.5" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="middle">reserva, confirmação</text>
+  <text x="135.0" y="543.5" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="middle">ou SQL manual</text>
+  <rect x="300" y="470" width="220" height="100" rx="10" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.6"/>
+  <text x="410.0" y="507.5" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="middle">trigger</text>
+  <text x="410.0" y="526.5" font-family="ui-monospace, 'SFMono-Regular', Consolas, 'Liberation Mono', monospace" font-size="12.5" font-weight="400" fill="#475569" text-anchor="middle">pg_notify('seat_changes')</text>
+  <text x="410.0" y="543.5" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="middle">entregue só no COMMIT</text>
+  <rect x="590" y="470" width="220" height="100" rx="10" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.6"/>
+  <text x="700.0" y="507.5" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="middle">live.Hub</text>
+  <text x="700.0" y="526.5" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="middle">LISTEN em conexão</text>
+  <text x="700.0" y="543.5" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="middle">dedicada → evento “sujo”</text>
+  <rect x="880" y="470" width="180" height="100" rx="10" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.6"/>
+  <text x="970.0" y="507.5" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="middle">worker</text>
+  <text x="970.0" y="526.5" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="middle">1 SeatSnapshot</text>
+  <text x="970.0" y="543.5" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="middle">por evento sujo</text>
+  <rect x="1120" y="470" width="160" height="100" rx="10" fill="#e0f2fe" stroke="#0284c7" stroke-width="1.6"/>
+  <text x="1200.0" y="507.5" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="middle">Navegador</text>
+  <text x="1200.0" y="526.5" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="middle">EventSource</text>
+  <text x="1200.0" y="543.5" font-family="ui-monospace, 'SFMono-Regular', Consolas, 'Liberation Mono', monospace" font-size="12.5" font-weight="400" fill="#475569" text-anchor="middle">event: seats</text>
+  <path d="M 230 520 L 298 520" fill="none" stroke="#334155" stroke-width="1.6" marker-end="url(#ah)"/>
+  <path d="M 520 520 L 588 520" fill="none" stroke="#334155" stroke-width="1.6" marker-end="url(#ah)"/>
+  <text x="554" y="511" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="middle">NOTIFY</text>
+  <path d="M 810 520 L 878 520" fill="none" stroke="#334155" stroke-width="1.6" marker-end="url(#ah)"/>
+  <path d="M 1060 520 L 1118 520" fill="none" stroke="#334155" stroke-width="1.6" marker-end="url(#ah)"/>
+  <text x="1089" y="511" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="middle">SSE</text>
+  <path d="M 970 570 L 970 605 L 700 605 L 700 572" fill="none" stroke="#334155" stroke-width="1.6" stroke-dasharray="6 5" marker-end="url(#ah)"/>
+  <text x="835" y="626" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="middle" font-style="italic">timer no próximo reserved_until (hold vencido não gera UPDATE)</text>
+  <text x="40" y="600" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="start" font-style="italic">rollback (os 49 perdedores do loadtest) não notifica ninguém</text>
+  <rect x="20" y="660" width="1280" height="330" rx="12" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="40" y="688" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#0f172a" text-anchor="start">3 · Busca de eventos (Elasticsearch + outbox, ADR-013)</text>
+  <text x="40" y="716" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#475569" text-anchor="start">escrita</text>
+  <rect x="40" y="730" width="200" height="100" rx="10" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.6"/>
+  <text x="140.0" y="767.5" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="middle">INSERT/UPDATE</text>
+  <text x="140.0" y="786.5" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="middle">events / venues</text>
+  <text x="140.0" y="803.5" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="middle">(nome, cidade, data)</text>
+  <rect x="310" y="730" width="230" height="100" rx="10" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.6"/>
+  <text x="425.0" y="767.5" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="middle">trigger (mesma tx)</text>
+  <text x="425.0" y="786.5" font-family="ui-monospace, 'SFMono-Regular', Consolas, 'Liberation Mono', monospace" font-size="12.5" font-weight="400" fill="#475569" text-anchor="middle">search_outbox(event_id)</text>
+  <text x="425.0" y="803.5" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="middle">+ pg_notify</text>
+  <rect x="610" y="730" width="230" height="100" rx="10" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.6"/>
+  <text x="725.0" y="767.5" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="middle">search.Indexer</text>
+  <text x="725.0" y="786.5" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="middle">LISTEN + poll de 5 s</text>
+  <text x="725.0" y="803.5" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="middle">lote SKIP LOCKED</text>
+  <rect x="940" y="730" width="330" height="100" rx="10" fill="#fef9c3" stroke="#ca8a04" stroke-width="1.6"/>
+  <text x="1105.0" y="767.5" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="middle">Elasticsearch</text>
+  <text x="1105.0" y="786.5" font-family="ui-monospace, 'SFMono-Regular', Consolas, 'Liberation Mono', monospace" font-size="12.5" font-weight="400" fill="#475569" text-anchor="middle">POST /_bulk no alias events</text>
+  <text x="1105.0" y="803.5" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="middle">depois: DELETE da linha do outbox</text>
+  <path d="M 240 780 L 308 780" fill="none" stroke="#334155" stroke-width="1.6" marker-end="url(#ah)"/>
+  <path d="M 540 780 L 608 780" fill="none" stroke="#334155" stroke-width="1.6" marker-end="url(#ah)"/>
+  <path d="M 840 780 L 938 780" fill="none" stroke="#334155" stroke-width="1.6" marker-end="url(#ah)"/>
+  <text x="889" y="771" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="middle">estado atual</text>
+  <text x="40" y="866" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#475569" text-anchor="start">leitura</text>
+  <rect x="40" y="880" width="200" height="80" rx="10" fill="#e0f2fe" stroke="#0284c7" stroke-width="1.6"/>
+  <text x="140.0" y="916.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="middle">GET</text>
+  <text x="140.0" y="935.0" font-family="ui-monospace, 'SFMono-Regular', Consolas, 'Liberation Mono', monospace" font-size="12.5" font-weight="400" fill="#475569" text-anchor="middle">/api/search?keyword=</text>
+  <rect x="310" y="880" width="260" height="80" rx="10" fill="#fef9c3" stroke="#ca8a04" stroke-width="1.6"/>
+  <text x="440.0" y="916.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="middle">Elasticsearch</text>
+  <text x="440.0" y="935.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="middle">IDs por relevância (fuzzy)</text>
+  <rect x="650" y="880" width="280" height="80" rx="10" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.6"/>
+  <text x="790.0" y="916.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="middle">Postgres</text>
+  <text x="790.0" y="935.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="middle">dados frescos por id, na ordem do ES</text>
+  <rect x="1010" y="880" width="260" height="80" rx="10" fill="#f1f5f9" stroke="#64748b" stroke-width="1.6"/>
+  <text x="1140.0" y="916.0" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="middle">Fallback no Postgres</text>
+  <text x="1140.0" y="935.0" font-family="ui-monospace, 'SFMono-Regular', Consolas, 'Liberation Mono', monospace" font-size="12.5" font-weight="400" fill="#475569" text-anchor="middle">unaccent(...) ILIKE</text>
+  <path d="M 240 920 L 308 920" fill="none" stroke="#334155" stroke-width="1.6" marker-end="url(#ah)"/>
+  <path d="M 570 920 L 648 920" fill="none" stroke="#334155" stroke-width="1.6" marker-end="url(#ah)"/>
+  <text x="609" y="911" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="middle">ids</text>
+  <path d="M 440 960 L 440 978 L 1140 978 L 1140 962" fill="none" stroke="#334155" stroke-width="1.6" stroke-dasharray="6 5" marker-end="url(#ah)"/>
+  <text x="790" y="972" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#475569" text-anchor="middle" font-style="italic">ES desligado, timeout 500 ms ou circuit breaker aberto</text>
+</svg>

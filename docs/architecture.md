@@ -2,6 +2,10 @@
 
 ## Visão geral
 
+![Visão geral dos serviços](img/arquitetura-visao-geral.svg)
+
+Fluxos internos (reserva, SSE, busca): [img/arquitetura-fluxos.svg](img/arquitetura-fluxos.svg).
+
 ```
  Browser ──► frontend (Vite dev server :5173) ──/api──► backend Go (:8080) ──► Postgres 16 (:5432)
               React SPA                          proxy    net/http + pgx    │    fonte da verdade
